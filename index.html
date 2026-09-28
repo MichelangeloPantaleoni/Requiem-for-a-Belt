@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  />
+
+  <title>OB-Star KDE Volume</title>
+
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #02050a;
+      color: white;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    #app {
+      position: fixed;
+      inset: 0;
+    }
+
+    #hud {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      z-index: 5;
+      max-width: 420px;
+      padding: 10px 12px;
+      border: 1px solid rgba(180, 210, 255, 0.20);
+      border-radius: 7px;
+      background: rgba(3, 7, 15, 0.72);
+      backdrop-filter: blur(5px);
+      pointer-events: none;
+    }
+
+    #title {
+      margin-bottom: 5px;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+
+    #status,
+    #hint {
+      color: rgba(230, 240, 255, 0.75);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    #hint {
+      margin-top: 5px;
+      color: rgba(190, 210, 235, 0.55);
+    }
+
+    #error {
+      position: fixed;
+      inset: 20px;
+      z-index: 100;
+      max-width: 700px;
+      height: fit-content;
+      margin: auto;
+      padding: 18px;
+      border: 1px solid #b84b4b;
+      border-radius: 8px;
+      background: rgba(45, 5, 8, 0.95);
+      color: white;
+      white-space: pre-wrap;
+      font-family: monospace;
+    }
+
+    .lil-gui.root {
+      --background-color: rgba(8, 14, 25, 0.92);
+      --widget-color: #1b3851;
+      --hover-color: #294f71;
+      --focus-color: #3977a7;
+      --text-color: #e8f4ff;
+      --number-color: #9ed8ff;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app"></div>
+
+  <div id="hud">
+    <div id="title">OB-star KDE density field</div>
+    <div id="status">Loading 3-D density texture...</div>
+    <div id="hint">
+      Left drag: orbit · Wheel: zoom · Right drag: pan<br>
+      Density controls use normalized log-KDE values. Crop sliders use pc.
+    </div>
+  </div>
+
+  <div id="error" hidden></div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
