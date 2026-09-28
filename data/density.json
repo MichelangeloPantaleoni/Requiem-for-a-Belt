@@ -1,0 +1,37 @@
+{
+  "dimensions": [
+    74,
+    74,
+    74
+  ],
+  "bounds": {
+    "x": [
+      -750.0,
+      750.0
+    ],
+    "y": [
+      -750.0,
+      750.0
+    ],
+    "z": [
+      -750.0,
+      750.0
+    ]
+  },
+  "spacing": [
+    20.54794520547945,
+    20.54794520547945,
+    20.54794520547945
+  ],
+  "units": "pc",
+  "displayTransform": "Gaussian-smoothed voxel counts; log10(vol + 1e-3); min-max normalized to [0, 1]",
+  "defaultControls": {
+    "lower": 0.425,
+    "upper": 0.82,
+    "softness": 0.25,
+    "opacity": 1.0,
+    "opticalDensity": 50.0,
+    "gamma": 2.0,
+    "steps": 170
+  }
+}
