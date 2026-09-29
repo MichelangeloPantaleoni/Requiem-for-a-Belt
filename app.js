@@ -10,6 +10,23 @@ import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19.2/dist/lil-gui.esm.mi
 
 const MAX_STEPS = 512;
 
+const CLUSTER_GROUP_COLOURS = Object.freeze({
+    alphaPer: 0xff00ff,  // magenta
+    cr135: 0xff8c00,     // orange
+    gammaVel: 0xdc143c,  // crimson
+    m6: 0x00ffff,        // aqua
+    other: 0x9e9e9e,     // gray
+});
+
+
+function getClusterGroupColour(group) {
+    return (
+        CLUSTER_GROUP_COLOURS[group.id]
+        ?? group.color
+        ?? 0xffffff
+    );
+}
+
 
 /* -------------------------------------------------------------------------- */
 /* GLSL SHADERS                                                               */
@@ -242,6 +259,12 @@ void main() {
 const app = document.getElementById('app');
 const status = document.getElementById('status');
 const errorBox = document.getElementById('error');
+const timeControl = document.getElementById('time-control');
+const timeSlider = document.getElementById('time-slider');
+const timeReadout = document.getElementById('time-readout');
+const timeMinimum = document.getElementById('time-minimum');
+const timeMaximum = document.getElementById('time-maximum');
+const timeTicks = document.getElementById('time-ticks');
 
 const renderer = new THREE.WebGLRenderer({
     antialias: true,
@@ -251,6 +274,7 @@ const renderer = new THREE.WebGLRenderer({
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x02050a, 1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 app.appendChild(renderer.domElement);
 
@@ -273,6 +297,14 @@ let clipOutline;
 */
 let gouldBeltLine;
 let gouldBeltMaterial;
+
+/*
+  Contains the trajectory data, point geometry, material, attributes,
+  and current trajectory frame.
+*/
+let clusterLayer = null;
+
+let timeSliderInitialised = false;
 
 let extent;
 let centre;
@@ -301,11 +333,30 @@ if (!renderer.capabilities.isWebGL2) {
 /* -------------------------------------------------------------------------- */
 
 async function initialise() {
-    const [metadata, rawBuffer, colorMap] = await Promise.all([
+    const [
+        metadata,
+        rawBuffer,
+        colorMap,
+        clusterMetadata,
+        clusterRawBuffer,
+    ] = await Promise.all([
         loadJSON('./data/density.json'),
         loadArrayBuffer('./data/density.u8'),
         new THREE.TextureLoader().loadAsync('./data/freeze.png'),
+
+        loadJSON('./data/cluster_trajectories.json'),
+        loadArrayBuffer('./data/cluster_trajectories.f32'),
     ]);
+
+
+    /*
+      Validate and decode the cluster metadata and binary position array.
+    */
+    const clusterData = parseClusterDataset(
+        clusterMetadata,
+        clusterRawBuffer
+    );
+
 
     if (
         !Array.isArray(metadata.dimensions)
@@ -448,7 +499,7 @@ async function initialise() {
       Line2 supports thick lines consistently across browsers,
       unlike ordinary THREE.Line / LineBasicMaterial.
     */
-    gouldBeltLineWidth: 3.0,
+    gouldBeltLineWidth: 5.5,
 
     /*
       0 = fully transparent
@@ -456,8 +507,37 @@ async function initialise() {
     */
     gouldBeltOpacity: 0.95,
 
+    /*
+      ----------------------------------------------------------------
+      Stellar cluster trajectory controls
+      ----------------------------------------------------------------
+    */
+    showClusters: Boolean(
+        clusterData.defaultControls.visible ?? true
+    ),
+
+    clusterTime: clusterData.timesMyr[
+        clusterData.zeroTimeIndex
+    ],
+
+    colorClustersByGroup: Boolean(
+        clusterData.defaultControls.colorByGroup ?? true
+    ),
+
+    clusterMinSize: finiteNumber(
+        clusterData.defaultControls.minMarkerSize,
+        9.0
+    ),
+
+    clusterMaxSize: finiteNumber(
+        clusterData.defaultControls.maxMarkerSize,
+        22.0
+    ),
+
+
     resetCrop: () => {},
     resetView: () => {},
+    resetClusterTime: () => {},
 };
 
     /*
@@ -601,16 +681,45 @@ async function initialise() {
     scene.add(gouldBeltLine);
 
 
+    /*
+      Create the dynamic point layer containing all clusters.
+      The helper function adds the points to the Three.js scene.
+    */
+    clusterLayer = createClusterLayer(clusterData);
+
+    /*
+      Start at t = 0 Myr.
+    */
+    setClusterFrameFromTime(
+        params.clusterTime
+    );
+
+    /*
+      Set marker radii and colours.
+    */
+    updateClusterStyle(true);
+
+    /*
+      Create the lower-centered trajectory slider.
+    */
+    initialiseExternalTimeSlider();
+
     createGUI();
 
     controls.addEventListener('change', requestRender);
 
     const volumeMiB = rawBuffer.byteLength / 1024**2;
 
+    const clusterTimeMin = clusterData.timesMyr[0];
+    const clusterTimeMax = clusterData.timesMyr[
+        clusterData.timesMyr.length - 1
+    ];
+
     status.textContent =
-        `${nx} × ${ny} × ${nz} volume texture · `
-        + `${volumeMiB.toFixed(3)} MiB · `
-        + `WebGL2 ray marching`;
+        `${nx} × ${ny} × ${nz} density texture · `
+        + `${clusterData.clusters.length} clusters · `
+        + `${clusterData.timesMyr.length} trajectory epochs `
+        + `(${clusterTimeMin} to ${clusterTimeMax} Myr)`;
 
     requestRender();
 }
@@ -622,32 +731,37 @@ async function initialise() {
 
 function createGUI() {
     const gui = new GUI({
-        title: 'Scene layers',
-        width: 330,
+        title: '',
+        width: 340,
     });
 
     gui.domElement.style.zIndex = '20';
 
-    /*
-      Helper: update the rendering whenever a GUI value changes.
-    */
     const watched = (controller) => {
-        controller.onChange(requestRender);
+        controller.onChange(() => {
+            requestRender();
+        });
+
         return controller;
     };
 
 
-    /*
-      ==================================================================
-      1. OB STAR DENSITY FIELD
-      ==================================================================
-    */
-    const densityFolder = gui.addFolder('OB star density field (ALS III, Pantaleoni et al. 2025)');
+    /* ====================================================================== */
+    /* OB STAR DENSITY FIELD                                                  */
+    /* ====================================================================== */
 
+    const densityFolder = gui.addFolder(
+        'OB star density field [Pantaleoni et al. 2025]'
+    );
+
+    /*
+      The volume is only rendered at t = 0 Myr.
+      It is automatically hidden at all other time values.
+    */
     watched(
         densityFolder
             .add(params, 'showDensity')
-            .name('Visible')
+            .name('Visible at t = 0')
     );
 
     const transferFolder = densityFolder.addFolder(
@@ -736,18 +850,18 @@ function createGUI() {
     addCropControl('zMax', 'Z max [pc]', ranges.z);
 
 
-    const densityViewFolder = densityFolder.addFolder(
+    const guideFolder = densityFolder.addFolder(
         'Volume guides'
     );
 
     watched(
-        densityViewFolder
+        guideFolder
             .add(params, 'showBounds')
             .name('Show domain box')
     );
 
     watched(
-        densityViewFolder
+        guideFolder
             .add(params, 'showCropBox')
             .name('Show crop box')
     );
@@ -775,61 +889,129 @@ function createGUI() {
         .name('Reset crop');
 
 
-    /*
-      ==================================================================
-      2. GOULD BELT MODEL
-      ==================================================================
-    */
-    const gouldFolder = gui.addFolder('Gould Belt model (Perrot & Grenier 2003)');
+    /* ====================================================================== */
+    /* GOULD BELT MODEL                                                       */
+    /* ====================================================================== */
 
+    const gouldFolder = gui.addFolder(
+        "Gould's Belt model [Perrot & Grenier 2003]"
+    );
+
+    /*
+      Like the density field, the Gould Belt model is displayed only at
+      t = 0 Myr. It is automatically hidden at other trajectory times.
+    */
     watched(
         gouldFolder
             .add(params, 'showGouldBelt')
-            .name('Visible')
+            .name('Visible at t = 0')
     );
 
     watched(
         gouldFolder
-            .add(params, 'gouldBeltLineWidth', 1.0, 15.0, 0.25)
+            .add(
+                params,
+                'gouldBeltLineWidth',
+                1.0,
+                15.0,
+                0.25
+            )
             .name('Line width [px]')
     );
 
     watched(
         gouldFolder
-            .add(params, 'gouldBeltOpacity', 0.0, 1.0, 0.01)
+            .add(
+                params,
+                'gouldBeltOpacity',
+                0.0,
+                1.0,
+                0.01
+            )
             .name('Opacity')
     );
 
 
-    /*
-      ==================================================================
-      GENERAL VIEW
-      ==================================================================
-    */
-    const viewFolder = gui.addFolder('View');
+    /* ====================================================================== */
+    /* STELLAR CLUSTER TRAJECTORIES                                           */
+    /* ====================================================================== */
 
-    params.resetView = () => {
-        camera.position.copy(initialCameraPosition);
-        controls.target.copy(centre);
-        controls.update();
+    const clusterFolder = gui.addFolder(
+        'Young stellar clusters [Hunt & Reffert 2023]'
+    );
+
+    watched(
+        clusterFolder
+            .add(params, 'showClusters')
+            .name('Visible')
+    );
+
+
+    const markerFolder = clusterFolder.addFolder(
+        'Marker appearance'
+    );
+
+    watched(
+        markerFolder
+            .add(params, 'colorClustersByGroup')
+            .name('Color by group')
+    );
+
+    watched(
+        markerFolder
+            .add(
+                params,
+                'clusterMinSize',
+                1.0,
+                80.0,
+                0.5
+            )
+            .name('Min sphere diameter [px]')
+    );
+
+    watched(
+        markerFolder
+            .add(
+                params,
+                'clusterMaxSize',
+                1.0,
+                120.0,
+                0.5
+            )
+            .name('Max sphere diameter [px]')
+    );
+
+    markerFolder.open();
+
+
+    params.resetClusterTime = () => {
+        params.clusterTime = clusterLayer.timesMyr[
+            clusterLayer.zeroTimeIndex
+        ];
+
+        setClusterFrameFromTime(
+            params.clusterTime
+        );
+
+        updateExternalTimeSlider();
 
         requestRender();
     };
 
-    viewFolder
-        .add(params, 'resetView')
-        .name('Reset camera');
+    clusterFolder
+        .add(params, 'resetClusterTime')
+        .name('Go to t = 0 Myr');
 
 
     /*
       Initial menu state.
 
-      The two principal scientific layers are expanded initially.
-      You can remove either `.open()` call if you prefer a more compact
-      initial menu.
+      There are only three top-level scientific-layer menus.
+      Change .open() / .close() if you prefer a different startup state.
     */
-    densityFolder.open();
-    gouldFolder.open();
+    densityFolder.close();
+    gouldFolder.close();
+    clusterFolder.close();
 }
 
 
@@ -838,6 +1020,39 @@ function createGUI() {
 /* -------------------------------------------------------------------------- */
 
 function syncUniforms() {
+    /*
+      Update cluster positions for the selected trajectory epoch.
+    */
+    const clusterFrameIndex = setClusterFrameFromTime(
+        params.clusterTime
+    );
+
+    /*
+      Recalculate marker colours and sizes only if a relevant control
+      actually changed.
+    */
+    updateClusterStyle();
+
+    /*
+      The density field and Gould Belt model are physically defined for
+      the present-day frame, t = 0 Myr.
+
+      They are intentionally hidden at all non-zero trajectory epochs.
+    */
+    const atPresentDay =
+        Math.abs(
+            clusterLayer.timesMyr[clusterFrameIndex]
+        ) < 1.0e-8;
+
+    const densityIsVisible =
+        Boolean(params.showDensity)
+        && atPresentDay;
+
+    const gouldBeltIsVisible =
+        Boolean(params.showGouldBelt)
+        && atPresentDay;
+
+
     const lower = THREE.MathUtils.clamp(
         finiteNumber(params.lower, 0.5),
         0.0,
@@ -850,21 +1065,11 @@ function syncUniforms() {
         1.0
     );
 
-    /*
-     Toggle the entire KDE volume.
-   */
-   volumeMesh.visible = Boolean(params.showDensity);
-
-   /*
-     Toggle the 3-D Gould Belt ellipse.
-   */
-   gouldBeltLine.visible = Boolean(params.showGouldBelt);
-
    /*
      Update Gould Belt line appearance.
    */
    gouldBeltMaterial.linewidth = THREE.MathUtils.clamp(
-       finiteNumber(params.gouldBeltLineWidth, 3.0),
+       finiteNumber(params.gouldBeltLineWidth, 5.5),
        0.5,
        30.0
    );
@@ -967,17 +1172,51 @@ function syncUniforms() {
         (clipMaxZ - clipMinZ) * extent.z
     );
 
+
     /*
-      The domain/crop guides belong to the density-field layer.
-      They disappear when "OB star density field" is switched off.
+      Cluster layer visibility is independent of the time epoch.
+    */
+    for (const groupLayer of clusterLayer.groupLayers) {
+        groupLayer.mesh.visible = Boolean(
+            params.showClusters
+        );
+    }
+
+    /*
+      Density field is available only at t = 0 Myr.
+    */
+    volumeMesh.visible = densityIsVisible;
+
+    /*
+      Gould Belt model is available only at t = 0 Myr.
+    */
+    gouldBeltLine.visible = gouldBeltIsVisible;
+
+    /*
+      Keep Gould Belt visual controls working.
+    */
+    gouldBeltMaterial.linewidth = THREE.MathUtils.clamp(
+        finiteNumber(params.gouldBeltLineWidth, 5.5),
+        0.5,
+        30.0
+    );
+
+    gouldBeltMaterial.opacity = THREE.MathUtils.clamp(
+        finiteNumber(params.gouldBeltOpacity, 0.95),
+        0.0,
+        1.0
+    );
+
+    /*
+      The volume guide boxes belong to the density-field layer.
     */
     outerOutline.visible =
-        Boolean(params.showDensity) &&
-        Boolean(params.showBounds);
+        densityIsVisible
+        && Boolean(params.showBounds);
 
     clipOutline.visible =
-        Boolean(params.showDensity) &&
-        Boolean(params.showCropBox);
+        densityIsVisible
+        && Boolean(params.showCropBox);
     }
 
 
@@ -1174,6 +1413,836 @@ function createGouldBeltModel() {
     return line;
 }
 
+/* -------------------------------------------------------------------------- */
+/* EXTERNAL TIME SLIDER                                                       */
+/* -------------------------------------------------------------------------- */
+
+function formatMyr(value) {
+    const number = Number(value);
+
+    if (!Number.isFinite(number)) {
+        return '0';
+    }
+
+    /*
+      Most of your values are integral Myr values, but this also supports
+      non-integer time grids if you ever need them later.
+    */
+    if (Math.abs(number - Math.round(number)) < 1.0e-8) {
+        return String(Math.round(number));
+    }
+
+    return number.toFixed(2);
+}
+
+
+function updateExternalTimeSlider() {
+    if (!clusterLayer || !timeSlider) {
+        return;
+    }
+
+    const firstTime = clusterLayer.timesMyr[0];
+
+    const lastTime = clusterLayer.timesMyr[
+        clusterLayer.timesMyr.length - 1
+    ];
+
+    const currentTime = clusterLayer.timesMyr[
+        nearestClusterFrameIndex(params.clusterTime)
+    ];
+
+    const denominator = lastTime - firstTime;
+
+    const fraction = denominator > 0.0
+        ? THREE.MathUtils.clamp(
+            (currentTime - firstTime) / denominator,
+            0.0,
+            1.0
+        )
+        : 0.5;
+
+    timeSlider.value = String(currentTime);
+
+    timeReadout.textContent =
+        `t = ${formatMyr(currentTime)} Myr`;
+
+    /*
+      Move the floating text so that it follows the thumb.
+    */
+    timeReadout.style.left =
+        `${100.0 * fraction}%`;
+
+    timeSlider.setAttribute(
+        'aria-valuetext',
+        `t = ${formatMyr(currentTime)} Myr`
+    );
+}
+
+function createTimeTicks() {
+    if (!clusterLayer || !timeTicks) {
+        return;
+    }
+
+    const firstTime = clusterLayer.timesMyr[0];
+
+    const lastTime = clusterLayer.timesMyr[
+        clusterLayer.timesMyr.length - 1
+    ];
+
+    const range = lastTime - firstTime;
+
+    if (range <= 0) {
+        return;
+    }
+
+    /*
+      Clear old ticks if this function is called again.
+    */
+    timeTicks.replaceChildren();
+
+    /*
+      Add ticks every 10 Myr.
+
+      For a -61 ... +61 Myr slider this creates marks at:
+      -60, -50, ..., -10, 0, +10, ..., +60 Myr.
+    */
+    for (let time = -60; time <= 60; time += 10) {
+        if (time < firstTime || time > lastTime) {
+            continue;
+        }
+
+        const fraction =
+            (time - firstTime) / range;
+
+        const tick = document.createElement('span');
+
+        tick.className =
+            time === 0
+                ? 'time-tick now'
+                : 'time-tick';
+
+        tick.style.left = `${100.0 * fraction}%`;
+
+        /*
+          Useful browser tooltip when hovering a tick mark.
+        */
+        tick.title =
+            time === 0
+                ? 'Now: t = 0 Myr'
+                : `t = ${time} Myr`;
+
+        timeTicks.appendChild(tick);
+    }
+}
+
+function initialiseExternalTimeSlider() {
+    if (
+        !clusterLayer
+        || !timeControl
+        || !timeSlider
+        || timeSliderInitialised
+    ) {
+        return;
+    }
+
+    const firstTime = clusterLayer.timesMyr[0];
+
+    const lastTime = clusterLayer.timesMyr[
+        clusterLayer.timesMyr.length - 1
+    ];
+
+    timeSlider.min = String(firstTime);
+    timeSlider.max = String(lastTime);
+    timeSlider.step = String(
+        clusterLayer.timeStepMyr
+    );
+
+    timeMinimum.textContent = 'Past';
+    timeMaximum.textContent = 'Future';
+
+    /*
+      Create the fixed 10-Myr tick marks, including the larger t = 0 mark.
+    */
+    createTimeTicks();
+
+    /*
+      While the user drags the thumb, immediately update cluster positions.
+    */
+    timeSlider.addEventListener('input', () => {
+        const requestedTime = Number(
+            timeSlider.value
+        );
+
+        const frameIndex = nearestClusterFrameIndex(
+            requestedTime
+        );
+
+        params.clusterTime = clusterLayer.timesMyr[
+            frameIndex
+        ];
+
+        setClusterFrameFromTime(
+            params.clusterTime
+        );
+
+        updateExternalTimeSlider();
+
+        requestRender();
+    });
+
+    timeSliderInitialised = true;
+
+    timeControl.hidden = false;
+
+    updateExternalTimeSlider();
+}
+
+/* -------------------------------------------------------------------------- */
+/* CLUSTER TRAJECTORY DATA                                                     */
+/* -------------------------------------------------------------------------- */
+
+function parseClusterDataset(metadata, rawBuffer) {
+    if (
+        !metadata
+        || !Array.isArray(metadata.timesMyr)
+        || !Array.isArray(metadata.groups)
+        || !Array.isArray(metadata.clusters)
+    ) {
+        throw new Error(
+            'cluster_trajectories.json has an invalid structure.'
+        );
+    }
+
+    const timesMyr = metadata.timesMyr.map(Number);
+
+    if (
+        timesMyr.length < 2
+        || !timesMyr.every(Number.isFinite)
+    ) {
+        throw new Error(
+            'cluster_trajectories.json contains an invalid time grid.'
+        );
+    }
+
+    for (let index = 1; index < timesMyr.length; index++) {
+        if (timesMyr[index] <= timesMyr[index - 1]) {
+            throw new Error(
+                'Cluster trajectory times must be strictly increasing.'
+            );
+        }
+    }
+
+    const timeStepMyr = timesMyr[1] - timesMyr[0];
+
+    for (let index = 2; index < timesMyr.length; index++) {
+        const currentStep =
+            timesMyr[index] - timesMyr[index - 1];
+
+        if (Math.abs(currentStep - timeStepMyr) > 1.0e-7) {
+            throw new Error(
+                'Cluster trajectory time samples are not uniformly spaced.'
+            );
+        }
+    }
+
+    const zeroTimeIndex = timesMyr.findIndex(
+        (time) => Math.abs(time) < 1.0e-8
+    );
+
+    if (zeroTimeIndex < 0) {
+        throw new Error(
+            'Cluster trajectories do not contain t = 0 Myr.'
+        );
+    }
+
+    const groups = metadata.groups.map((group, index) => {
+        if (!group || typeof group !== 'object') {
+            throw new Error(
+                `Invalid cluster group at index ${index}.`
+            );
+        }
+
+        return {
+            id: String(group.id ?? `group-${index}`),
+            label: String(group.label ?? `Group ${index}`),
+            color: String(group.color ?? '#ffffff'),
+        };
+    });
+
+    const clusters = metadata.clusters.map((cluster, index) => {
+        if (!cluster || typeof cluster !== 'object') {
+            throw new Error(
+                `Invalid cluster record at index ${index}.`
+            );
+        }
+
+        const groupIndex = Number(cluster.groupIndex);
+        const nStars = Number(cluster.nStars);
+
+        if (
+            !Number.isInteger(groupIndex)
+            || groupIndex < 0
+            || groupIndex >= groups.length
+        ) {
+            throw new Error(
+                `Cluster '${cluster.name}' has an invalid groupIndex.`
+            );
+        }
+
+        if (!Number.isFinite(nStars)) {
+            throw new Error(
+                `Cluster '${cluster.name}' has an invalid nStars value.`
+            );
+        }
+
+        return {
+            name: String(cluster.name),
+            nStars,
+            groupIndex,
+        };
+    });
+
+    if (clusters.length === 0) {
+        throw new Error(
+            'No clusters were found in cluster_trajectories.json.'
+        );
+    }
+
+    const expectedFloatCount =
+        timesMyr.length
+        * clusters.length
+        * 3;
+
+    const expectedByteLength =
+        expectedFloatCount
+        * Float32Array.BYTES_PER_ELEMENT;
+
+    if (rawBuffer.byteLength !== expectedByteLength) {
+        throw new Error(
+            'cluster_trajectories.f32 has an unexpected size.\n\n'
+            + `Expected: ${expectedByteLength} bytes\n`
+            + `Found:    ${rawBuffer.byteLength} bytes`
+        );
+    }
+
+    const trajectory = new Float32Array(rawBuffer);
+
+    for (let index = 0; index < trajectory.length; index++) {
+        if (!Number.isFinite(trajectory[index])) {
+            throw new Error(
+                'cluster_trajectories.f32 contains invalid numerical values.'
+            );
+        }
+    }
+
+    return {
+        timesMyr,
+        timeStepMyr,
+        zeroTimeIndex,
+
+        groups,
+        clusters,
+
+        trajectory,
+
+        defaultControls: metadata.defaultControls ?? {},
+    };
+}
+
+
+function updateClusterTransforms(force = false) {
+    if (!clusterLayer) {
+        return;
+    }
+
+    const frameIndex = clusterLayer.frameIndex;
+
+    if (frameIndex < 0) {
+        return;
+    }
+
+    const numberOfClusters = clusterLayer.clusters.length;
+
+    const valuesPerFrame =
+        numberOfClusters * 3;
+
+    const positionOffset =
+        frameIndex * valuesPerFrame;
+
+    const trajectory = clusterLayer.trajectory;
+    const radiiPc = clusterLayer.radiiPc;
+
+    const dummy = clusterLayer.dummy;
+
+    /*
+      Update every group mesh independently.
+
+      `clusterIndex` is the index in the complete catalogue.
+      `localIndex` is the instance index within that specific group mesh.
+    */
+    for (const groupLayer of clusterLayer.groupLayers) {
+        const {
+            mesh,
+            clusterIndices,
+        } = groupLayer;
+
+        for (
+            let localIndex = 0;
+            localIndex < clusterIndices.length;
+            localIndex++
+        ) {
+            const clusterIndex =
+                clusterIndices[localIndex];
+
+            const coordinateIndex =
+                positionOffset + 3 * clusterIndex;
+
+            const x = trajectory[coordinateIndex + 0];
+            const y = trajectory[coordinateIndex + 1];
+            const z = trajectory[coordinateIndex + 2];
+
+            const radius = Math.max(
+                radiiPc[clusterIndex],
+                0.001
+            );
+
+            dummy.position.set(x, y, z);
+
+            /*
+              SphereGeometry radius is 1, so this gives the actual
+              physical radius in pc.
+            */
+            dummy.scale.set(radius, radius, radius);
+
+            dummy.updateMatrix();
+
+            mesh.setMatrixAt(
+                localIndex,
+                dummy.matrix
+            );
+        }
+
+        mesh.instanceMatrix.needsUpdate = true;
+    }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* CREATE THE GPU POINT LAYER                                                 */
+/* -------------------------------------------------------------------------- */
+
+function createClusterLayer(dataset) {
+    const numberOfClusters = dataset.clusters.length;
+
+    /*
+      A single unit sphere geometry is shared by all five groups.
+
+      Each individual cluster receives its physical radius through an
+      instance transformation matrix.
+    */
+    const sphereGeometry = new THREE.SphereGeometry(
+        1.0,
+        16,
+        12
+    );
+
+    /*
+      Create one InstancedMesh for each cluster group.
+
+      This avoids the per-instance GPU colour-buffer issue entirely.
+      Each group has a normal material with a direct colour.
+    */
+    const groupLayers = dataset.groups
+        .map((group, groupIndex) => {
+            const clusterIndices = [];
+
+            for (
+                let clusterIndex = 0;
+                clusterIndex < dataset.clusters.length;
+                clusterIndex++
+            ) {
+                if (
+                    dataset.clusters[clusterIndex].groupIndex
+                    === groupIndex
+                ) {
+                    clusterIndices.push(clusterIndex);
+                }
+            }
+
+            /*
+              A group may theoretically be empty. Do not create a mesh
+              in that case.
+            */
+            if (clusterIndices.length === 0) {
+                return null;
+            }
+
+            const baseColour = new THREE.Color(
+                getClusterGroupColour(group)
+            );
+
+            const material = new THREE.MeshPhongMaterial({
+                /*
+                  This is the visible group colour.
+                */
+                color: baseColour,
+
+                /*
+                  A faint emissive component ensures that the sphere is
+                  recognisably coloured even on its dark/shadowed side.
+                */
+                emissive: baseColour.clone().multiplyScalar(0.12),
+                emissiveIntensity: 1.0,
+
+                shininess: 55,
+                specular: 0x666666,
+
+                /*
+                  The density field is transparent and must be rendered
+                  first. Keeping spheres in the transparent pass with
+                  opacity = 1 draws them afterward.
+
+                  They remain visually opaque.
+                */
+                transparent: true,
+                opacity: 1.0,
+
+                /*
+                  Important: real depth-buffer writes fix the overlap
+                  problem between nearby and distant spheres.
+                */
+                depthTest: true,
+                depthWrite: true,
+
+                toneMapped: false,
+            });
+
+            const mesh = new THREE.InstancedMesh(
+                sphereGeometry,
+                material,
+                clusterIndices.length
+            );
+
+            mesh.name = group.label;
+
+            mesh.instanceMatrix.setUsage(
+                THREE.DynamicDrawUsage
+            );
+
+            /*
+              Clusters may move outside the initial bounding area during
+              traceback/forward integration.
+            */
+            mesh.frustumCulled = false;
+
+            /*
+              Draw after volume and Gould Belt.
+            */
+            mesh.renderOrder = 10;
+
+            scene.add(mesh);
+
+            return {
+                groupIndex,
+                group,
+                clusterIndices,
+                mesh,
+                material,
+            };
+        })
+        .filter((groupLayer) => groupLayer !== null);
+
+
+    /*
+      Lighting applies only to ordinary Three.js materials such as the
+      cluster spheres. It does not affect the custom volume shader.
+    */
+    const ambientLight = new THREE.AmbientLight(
+        0xffffff,
+        0.85
+    );
+
+    scene.add(ambientLight);
+
+
+    const hemisphereLight = new THREE.HemisphereLight(
+        0xdceeff,
+        0x263041,
+        0.70
+    );
+
+    scene.add(hemisphereLight);
+
+
+    const directionalLight = new THREE.DirectionalLight(
+        0xffffff,
+        1.10
+    );
+
+    directionalLight.position.set(
+        -1.0,
+        1.5,
+        2.0
+    );
+
+    scene.add(directionalLight);
+
+
+    const nStarsValues = dataset.clusters.map(
+        (cluster) => cluster.nStars
+    );
+
+    const dummy = new THREE.Object3D();
+
+    return {
+        timesMyr: dataset.timesMyr,
+        timeStepMyr: dataset.timeStepMyr,
+        zeroTimeIndex: dataset.zeroTimeIndex,
+
+        groups: dataset.groups,
+        clusters: dataset.clusters,
+        trajectory: dataset.trajectory,
+
+        /*
+          There are now five sphere meshes rather than one.
+        */
+        groupLayers,
+
+        sphereGeometry,
+        dummy,
+
+        radiiPc: new Float32Array(numberOfClusters),
+
+        nStarsMin: Math.min(...nStarsValues),
+        nStarsMax: Math.max(...nStarsValues),
+
+        referenceDistance: camera.position.distanceTo(
+            controls.target
+        ),
+
+        frameIndex: -1,
+        styleSignature: '',
+    };
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* TIME SELECTION                                                             */
+/* -------------------------------------------------------------------------- */
+
+function nearestClusterFrameIndex(timeMyr) {
+    if (!clusterLayer) {
+        return 0;
+    }
+
+    const fallbackTime = clusterLayer.timesMyr[
+        clusterLayer.zeroTimeIndex
+    ];
+
+    const requestedTime = finiteNumber(
+        timeMyr,
+        fallbackTime
+    );
+
+    let bestIndex = 0;
+
+    let bestDistance = Math.abs(
+        requestedTime - clusterLayer.timesMyr[0]
+    );
+
+    for (
+        let index = 1;
+        index < clusterLayer.timesMyr.length;
+        index++
+    ) {
+        const distance = Math.abs(
+            requestedTime - clusterLayer.timesMyr[index]
+        );
+
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestIndex = index;
+        }
+    }
+
+    return bestIndex;
+}
+
+
+function setClusterFrameFromTime(timeMyr) {
+    if (!clusterLayer) {
+        return -1;
+    }
+
+    const frameIndex = nearestClusterFrameIndex(
+        timeMyr
+    );
+
+    const canonicalTime = clusterLayer.timesMyr[
+        frameIndex
+    ];
+
+    /*
+      Keep the parameter exactly on one of the available precomputed
+      trajectory epochs.
+    */
+    params.clusterTime = canonicalTime;
+
+    if (clusterLayer.frameIndex === frameIndex) {
+        return frameIndex;
+    }
+
+    clusterLayer.frameIndex = frameIndex;
+
+    /*
+      The position of every sphere is encoded in its instance matrix.
+    */
+    updateClusterTransforms(true);
+
+    return frameIndex;
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* MARKER STYLE                                                               */
+/* -------------------------------------------------------------------------- */
+
+function updateClusterStyle(force = false) {
+    if (!clusterLayer) {
+        return;
+    }
+
+    const minDiameterPx = THREE.MathUtils.clamp(
+        finiteNumber(params.clusterMinSize, 8.0),
+        1.0,
+        120.0
+    );
+
+    const maxDiameterPx = THREE.MathUtils.clamp(
+        finiteNumber(params.clusterMaxSize, 60.0),
+        1.0,
+        200.0
+    );
+
+    const colorByGroup = Boolean(
+        params.colorClustersByGroup
+    );
+
+    const viewportHeight = Math.max(
+        renderer.domElement.clientHeight,
+        1
+    );
+
+    const styleSignature = [
+        minDiameterPx,
+        maxDiameterPx,
+        colorByGroup,
+        viewportHeight,
+    ].join('|');
+
+    if (
+        !force
+        && clusterLayer.styleSignature === styleSignature
+    ) {
+        return;
+    }
+
+    const nStarsMin = clusterLayer.nStarsMin;
+    const nStarsMax = clusterLayer.nStarsMax;
+
+    const nStarsRange =
+        nStarsMax - nStarsMin;
+
+    const verticalFovRadians = THREE.MathUtils.degToRad(
+        camera.fov
+    );
+
+    /*
+      Convert the old screen-pixel marker diameter into a real physical
+      sphere radius, in pc, at the initial reference camera distance.
+    */
+    const pixelsToPhysicalRadius =
+        clusterLayer.referenceDistance
+        * Math.tan(verticalFovRadians * 0.5)
+        / viewportHeight;
+
+    /*
+      Update the physical radius of every cluster.
+    */
+    for (
+        let clusterIndex = 0;
+        clusterIndex < clusterLayer.clusters.length;
+        clusterIndex++
+    ) {
+        const cluster = clusterLayer.clusters[
+            clusterIndex
+        ];
+
+        const normalizedNStars =
+            nStarsRange > 0.0
+                ? THREE.MathUtils.clamp(
+                    (cluster.nStars - nStarsMin)
+                    / nStarsRange,
+                    0.0,
+                    1.0
+                )
+                : 0.0;
+
+        /*
+          Same parabolic relation as your original Python marker-size
+          prescription.
+        */
+        const markerDiameterPx =
+            minDiameterPx
+            + (maxDiameterPx - minDiameterPx)
+            * normalizedNStars
+            * normalizedNStars;
+
+        const radiusPc =
+            markerDiameterPx
+            * pixelsToPhysicalRadius;
+
+        clusterLayer.radiiPc[clusterIndex] = Math.max(
+            radiusPc,
+            0.25
+        );
+    }
+
+    /*
+      Update the colour of each of the five group materials.
+
+      When colour-by-group is disabled, every group material becomes white.
+    */
+    for (const groupLayer of clusterLayer.groupLayers) {
+        const displayColour = new THREE.Color(
+            colorByGroup
+                ? getClusterGroupColour(groupLayer.group)
+                : 0xffffff
+        );
+
+        groupLayer.material.color.copy(
+            displayColour
+        );
+
+        /*
+          The emissive contribution is deliberately small: it preserves
+          recognisable colour in darkness while retaining sphere shading.
+        */
+        groupLayer.material.emissive
+            .copy(displayColour)
+            .multiplyScalar(0.12);
+
+        groupLayer.material.needsUpdate = true;
+    }
+
+    /*
+      Radii changed, so update the instance transform matrices.
+    */
+    updateClusterTransforms(true);
+
+    clusterLayer.styleSignature = styleSignature;
+}
+
 
 function makeOutline(color, opacity) {
     const geometry = new THREE.EdgesGeometry(
@@ -1268,24 +2337,31 @@ async function loadArrayBuffer(url) {
 
 
 function onResize() {
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(
+        window.innerWidth,
+        window.innerHeight
+    );
 
     if (camera) {
-        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.aspect =
+            window.innerWidth / window.innerHeight;
+
         camera.updateProjectionMatrix();
     }
 
-    /*
-      Required by THREE.LineMaterial / Line2.
-
-      Without this, the Gould Belt line may have an incorrect apparent
-      thickness after resizing the browser window.
-    */
     if (gouldBeltMaterial) {
         gouldBeltMaterial.resolution.set(
             window.innerWidth,
             window.innerHeight
         );
+    }
+
+    /*
+      Sphere marker radii are calibrated from the reference screen-pixel
+      sizes, so update them after resizing the browser window.
+    */
+    if (clusterLayer) {
+        updateClusterStyle(true);
     }
 
     requestRender();

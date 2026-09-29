@@ -83,6 +83,256 @@
       --text-color: #e8f4ff;
       --number-color: #9ed8ff;
     }
+
+    /*
+      Hide the otherwise empty lil-gui root title bar.
+
+      The three scientific layers become the visible top-level menu entries.
+    */
+    .lil-gui.root > .title {
+      display: none;
+    }
+
+    /* ------------------------------------------------------------------------- */
+    /* EXTERNAL TRAJECTORY TIME SLIDER                                           */
+    /* ------------------------------------------------------------------------- */
+
+    #time-control {
+      position: fixed;
+      left: 50%;
+      bottom: 28px;
+      z-index: 50;
+
+      width: min(760px, 52vw, calc(100vw - 48px));
+
+      transform: translateX(-50%);
+
+      pointer-events: auto;
+      user-select: none;
+    }
+
+    /*
+      The floating current-time label.
+
+      It is deliberately unboxed and placed higher above the slider,
+      avoiding overlap with the circular thumb.
+    */
+    #time-readout {
+      position: absolute;
+      bottom: 42px;
+      left: 50%;
+      z-index: 4;
+
+      transform: translateX(-50%);
+
+      padding: 0;
+      border: none;
+      background: transparent;
+
+      color: white;
+
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+
+      text-shadow:
+        0 1px 4px rgba(0, 0, 0, 0.95),
+        0 0 8px rgba(0, 0, 0, 0.80);
+
+      pointer-events: none;
+    }
+
+    /*
+      Tick marks lie behind the slider thumb but remain visible around it.
+    */
+    #time-ticks {
+      position: absolute;
+      top: 9px;
+
+      /*
+        The slider thumb is 18 px wide.
+
+        The browser moves the thumb centre from 9 px inside the left edge
+        to 9 px inside the right edge. Therefore tick marks must use this
+        same available travel range rather than the full input width.
+      */
+      left: 9px;
+      width: calc(100% - 18px);
+
+      z-index: 1;
+      height: 16px;
+
+      pointer-events: none;
+    }
+
+    /*
+      Standard tick: every 10 Myr.
+    */
+    .time-tick {
+      position: absolute;
+      bottom: 0;
+
+      width: 1px;
+      height: 7px;
+
+      transform: translateX(-50%);
+
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    /*
+      The present-day t = 0 Myr tick is more prominent.
+    */
+    .time-tick.now {
+      width: 2px;
+      height: 15px;
+
+      background: rgba(255, 255, 255, 1.0);
+
+      box-shadow: 0 0 5px rgba(255, 255, 255, 0.60);
+    }
+
+    #time-slider {
+      position: relative;
+      z-index: 2;
+
+      display: block;
+
+      width: 100%;
+      height: 26px;
+      margin: 0;
+
+      appearance: none;
+      -webkit-appearance: none;
+
+      background: transparent;
+      cursor: pointer;
+    }
+
+    /* Chrome, Edge, Safari */
+    #time-slider::-webkit-slider-runnable-track {
+      height: 3px;
+
+      border-radius: 99px;
+
+      background: rgba(255, 255, 255, 0.92);
+
+      box-shadow:
+        0 0 4px rgba(255, 255, 255, 0.55),
+        0 0 10px rgba(180, 225, 255, 0.28);
+    }
+
+    /* Chrome, Edge, Safari */
+    #time-slider::-webkit-slider-thumb {
+      width: 18px;
+      height: 18px;
+
+      margin-top: -7.5px;
+
+      border: 2px solid rgba(10, 18, 30, 0.95);
+      border-radius: 50%;
+
+      background: #ffffff;
+
+      appearance: none;
+      -webkit-appearance: none;
+
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.35),
+        0 2px 8px rgba(0, 0, 0, 0.55);
+    }
+
+    /*
+      Glow the time thumb only while the pointer/mouse button is held down.
+    */
+    #time-slider:active::-webkit-slider-thumb {
+      background: #ffffff;
+
+      box-shadow:
+        0 0 0 2px rgba(255, 255, 255, 0.75),
+        0 0 8px rgba(255, 255, 255, 0.90),
+        0 0 18px rgba(130, 215, 255, 0.80),
+        0 0 30px rgba(100, 180, 255, 0.45);
+    }
+
+    /* Firefox */
+    #time-slider::-moz-range-track {
+      height: 3px;
+
+      border-radius: 99px;
+
+      background: rgba(255, 255, 255, 0.92);
+
+      box-shadow:
+        0 0 4px rgba(255, 255, 255, 0.55),
+        0 0 10px rgba(180, 225, 255, 0.28);
+    }
+
+    /* Firefox */
+    #time-slider::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+
+      border: 2px solid rgba(10, 18, 30, 0.95);
+      border-radius: 50%;
+
+      background: #ffffff;
+
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.35),
+        0 2px 8px rgba(0, 0, 0, 0.55);
+    }
+
+    #time-slider:active::-moz-range-thumb {
+      background: #ffffff;
+
+      box-shadow:
+        0 0 0 2px rgba(255, 255, 255, 0.75),
+        0 0 8px rgba(255, 255, 255, 0.90),
+        0 0 18px rgba(130, 215, 255, 0.80),
+        0 0 30px rgba(100, 180, 255, 0.45);
+    }
+
+    #time-endpoints {
+      position: relative;
+
+      display: flex;
+      justify-content: space-between;
+
+      margin-top: 7px;
+
+      color: rgba(225, 235, 250, 0.80);
+
+      font-size: 11px;
+      line-height: 1;
+    }
+
+    /*
+      Keep "Now" exactly centered regardless of the relative widths
+      of "Past" and "Future".
+    */
+    #time-now {
+      position: absolute;
+      left: 50%;
+
+      transform: translateX(-50%);
+
+      color: rgba(255, 255, 255, 0.95);
+      font-weight: 600;
+    }
+
+    @media (max-width: 650px) {
+      #time-control {
+        bottom: 18px;
+        width: calc(100vw - 36px);
+      }
+
+      #time-readout {
+        bottom: 40px;
+        font-size: 12px;
+      }
+    }
+
   </style>
 </head>
 
@@ -95,6 +345,29 @@
     <div id="hint">
       Left drag: orbit · Wheel: zoom · Right drag: pan<br>
       Density controls use normalized log-KDE values. Crop sliders use pc.
+    </div>
+  </div>
+
+  <div id="time-control" hidden>
+    <div id="time-readout">t = 0 Myr</div>
+
+    <!-- Tick marks are generated dynamically by app.js. -->
+    <div id="time-ticks" aria-hidden="true"></div>
+
+    <input
+      id="time-slider"
+      type="range"
+      min="-61"
+      max="61"
+      step="1"
+      value="0"
+      aria-label="Cluster trajectory time in Myr"
+    />
+
+    <div id="time-endpoints">
+      <span id="time-minimum">Past</span>
+      <span id="time-now">Now</span>
+      <span id="time-maximum">Future</span>
     </div>
   </div>
 
