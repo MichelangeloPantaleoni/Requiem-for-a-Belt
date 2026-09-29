@@ -161,801 +161,961 @@
     {
       "name": "ADS_16795",
       "nStars": 41.0,
+      "ageMyr": 56.90967178794703,
       "groupIndex": 0
     },
     {
       "name": "ASCC_100",
       "nStars": 87.0,
+      "ageMyr": 64.89169259443132,
       "groupIndex": 0
     },
     {
       "name": "CWNU_1015",
       "nStars": 98.0,
+      "ageMyr": 34.16014809882644,
       "groupIndex": 0
     },
     {
       "name": "CWNU_1129",
       "nStars": 34.0,
+      "ageMyr": 15.032246461482671,
       "groupIndex": 0
     },
     {
       "name": "CWNU_1143",
       "nStars": 73.0,
+      "ageMyr": 18.486817503234697,
       "groupIndex": 0
     },
     {
       "name": "Chamaleon_I",
       "nStars": 192.0,
+      "ageMyr": 5.667288113054664,
       "groupIndex": 0
     },
     {
       "name": "Gaia_8",
       "nStars": 150.0,
+      "ageMyr": 21.06306723574388,
       "groupIndex": 0
     },
     {
       "name": "HSC_381",
       "nStars": 288.0,
+      "ageMyr": 30.657449814155463,
       "groupIndex": 0
     },
     {
       "name": "HSC_415",
       "nStars": 35.0,
+      "ageMyr": 32.88494341618984,
       "groupIndex": 0
     },
     {
       "name": "HSC_474",
       "nStars": 86.0,
+      "ageMyr": 30.97879697893461,
       "groupIndex": 0
     },
     {
       "name": "HSC_958",
       "nStars": 107.0,
+      "ageMyr": 40.7111225464287,
       "groupIndex": 0
     },
     {
       "name": "HSC_1020",
       "nStars": 25.0,
+      "ageMyr": 33.75769341158441,
       "groupIndex": 0
     },
     {
       "name": "HSC_1318",
       "nStars": 52.0,
+      "ageMyr": 5.532796761729015,
       "groupIndex": 0
     },
     {
       "name": "HSC_1438",
       "nStars": 110.0,
+      "ageMyr": 56.584932957159545,
       "groupIndex": 0
     },
     {
       "name": "HSC_1553",
       "nStars": 330.0,
+      "ageMyr": 38.49574605055638,
       "groupIndex": 0
     },
     {
       "name": "HSC_2068",
       "nStars": 28.0,
+      "ageMyr": 26.34412999775112,
       "groupIndex": 0
     },
     {
       "name": "HSC_2139",
       "nStars": 67.0,
+      "ageMyr": 11.542014314314429,
       "groupIndex": 0
     },
     {
       "name": "HSC_2216",
       "nStars": 11.0,
+      "ageMyr": 65.59031173084537,
       "groupIndex": 0
     },
     {
       "name": "HSC_2468",
       "nStars": 210.0,
+      "ageMyr": 8.388289128103372,
       "groupIndex": 0
     },
     {
       "name": "HSC_2505",
       "nStars": 119.0,
+      "ageMyr": 6.99025328540798,
       "groupIndex": 0
     },
     {
       "name": "HSC_2523",
       "nStars": 21.0,
+      "ageMyr": 6.974881825118802,
       "groupIndex": 0
     },
     {
       "name": "HSC_2630",
       "nStars": 29.0,
+      "ageMyr": 7.535311027115747,
       "groupIndex": 0
     },
     {
       "name": "HSC_2636",
       "nStars": 284.0,
+      "ageMyr": 9.84036564706666,
       "groupIndex": 0
     },
     {
       "name": "HSC_2733",
       "nStars": 165.0,
+      "ageMyr": 9.51023256343103,
       "groupIndex": 0
     },
     {
       "name": "HSC_2816",
       "nStars": 76.0,
+      "ageMyr": 8.63240317444668,
       "groupIndex": 0
     },
     {
       "name": "HSC_2907",
       "nStars": 349.0,
+      "ageMyr": 9.776611557357926,
       "groupIndex": 0
     },
     {
       "name": "HSC_2919",
       "nStars": 175.0,
+      "ageMyr": 27.137981216688782,
       "groupIndex": 0
     },
     {
       "name": "HSC_2931",
       "nStars": 40.0,
+      "ageMyr": 6.285917725935578,
       "groupIndex": 0
     },
     {
       "name": "HSC_2986",
       "nStars": 222.0,
+      "ageMyr": 7.131413849382049,
       "groupIndex": 0
     },
     {
       "name": "IC_2602",
       "nStars": 638.0,
+      "ageMyr": 25.97417255356736,
       "groupIndex": 0
     },
     {
       "name": "IC_4665",
       "nStars": 308.0,
+      "ageMyr": 32.69698970338678,
       "groupIndex": 0
     },
     {
       "name": "Mamajek_1",
       "nStars": 19.0,
+      "ageMyr": 4.458729938421007,
       "groupIndex": 0
     },
     {
       "name": "Mamajek_3",
       "nStars": 33.0,
+      "ageMyr": 16.663289891684034,
       "groupIndex": 0
     },
     {
       "name": "Melotte_20",
       "nStars": 938.0,
+      "ageMyr": 55.60381008262949,
       "groupIndex": 0
     },
     {
       "name": "OC_0666",
       "nStars": 64.0,
+      "ageMyr": 6.021590896977117,
       "groupIndex": 0
     },
     {
       "name": "OCSN_10",
       "nStars": 121.0,
+      "ageMyr": 54.54966496337949,
       "groupIndex": 0
     },
     {
       "name": "OCSN_24",
       "nStars": 58.0,
+      "ageMyr": 55.61895270671121,
       "groupIndex": 0
     },
     {
       "name": "OCSN_92",
       "nStars": 103.0,
+      "ageMyr": 9.237039051431733,
       "groupIndex": 0
     },
     {
       "name": "OCSN_96",
       "nStars": 223.0,
+      "ageMyr": 4.688236811255971,
       "groupIndex": 0
     },
     {
       "name": "OCSN_98",
       "nStars": 75.0,
+      "ageMyr": 4.452876319923621,
       "groupIndex": 0
     },
     {
       "name": "OCSN_100",
       "nStars": 87.0,
+      "ageMyr": 3.616197121697464,
       "groupIndex": 0
     },
     {
       "name": "Platais_6",
       "nStars": 53.0,
+      "ageMyr": 48.38478701779541,
       "groupIndex": 0
     },
     {
       "name": "Platais_8",
       "nStars": 225.0,
+      "ageMyr": 31.21369541153424,
       "groupIndex": 0
     },
     {
       "name": "Stephenson_1",
       "nStars": 322.0,
+      "ageMyr": 26.6313306117334,
       "groupIndex": 0
     },
     {
       "name": "Teutsch_179",
       "nStars": 112.0,
+      "ageMyr": 30.8176537944635,
       "groupIndex": 0
     },
     {
       "name": "Theia_23",
       "nStars": 121.0,
+      "ageMyr": 21.427722301065184,
       "groupIndex": 0
     },
     {
       "name": "Theia_53",
       "nStars": 123.0,
+      "ageMyr": 35.7296745492336,
       "groupIndex": 0
     },
     {
       "name": "Theia_54",
       "nStars": 48.0,
+      "ageMyr": 4.09762657037063,
       "groupIndex": 0
     },
     {
       "name": "Theia_65",
       "nStars": 37.0,
+      "ageMyr": 9.335459276276763,
       "groupIndex": 0
     },
     {
       "name": "Theia_66",
       "nStars": 39.0,
+      "ageMyr": 6.2216966783135215,
       "groupIndex": 0
     },
     {
       "name": "Theia_67",
       "nStars": 56.0,
+      "ageMyr": 11.694649324566871,
       "groupIndex": 0
     },
     {
       "name": "Theia_69",
       "nStars": 31.0,
+      "ageMyr": 15.696839778383426,
       "groupIndex": 0
     },
     {
       "name": "Theia_72",
       "nStars": 140.0,
+      "ageMyr": 27.27395378602878,
       "groupIndex": 0
     },
     {
       "name": "Theia_232",
       "nStars": 152.0,
+      "ageMyr": 44.52213899975566,
       "groupIndex": 0
     },
     {
       "name": "UPK_116",
       "nStars": 76.0,
+      "ageMyr": 44.30083333670723,
       "groupIndex": 0
     },
     {
       "name": "UPK_606",
       "nStars": 80.0,
+      "ageMyr": 9.57045254456472,
       "groupIndex": 0
     },
     {
       "name": "UPK_640",
       "nStars": 764.0,
+      "ageMyr": 9.619756343507497,
       "groupIndex": 0
     },
     {
       "name": "ASCC_18",
       "nStars": 82.0,
+      "ageMyr": 9.258259923914624,
       "groupIndex": 1
     },
     {
       "name": "ASCC_20",
       "nStars": 194.0,
+      "ageMyr": 12.542163542168938,
       "groupIndex": 1
     },
     {
       "name": "Alessi_34",
       "nStars": 857.0,
+      "ageMyr": 20.64629955203404,
       "groupIndex": 1
     },
     {
       "name": "Alessi_36",
       "nStars": 198.0,
+      "ageMyr": 28.90400368960557,
       "groupIndex": 1
     },
     {
       "name": "CWNU_1024",
       "nStars": 336.0,
+      "ageMyr": 32.43561156942052,
       "groupIndex": 1
     },
     {
       "name": "CWNU_1072",
       "nStars": 60.0,
+      "ageMyr": 13.087898746425198,
       "groupIndex": 1
     },
     {
       "name": "CWNU_1144",
       "nStars": 77.0,
+      "ageMyr": 23.59692568985372,
       "groupIndex": 1
     },
     {
       "name": "Collinder_135",
       "nStars": 209.0,
+      "ageMyr": 29.828836681681505,
       "groupIndex": 1
     },
     {
       "name": "Collinder_140",
       "nStars": 203.0,
+      "ageMyr": 17.251842306078746,
       "groupIndex": 1
     },
     {
       "name": "FoF_2383",
       "nStars": 422.0,
+      "ageMyr": 37.85716836982711,
       "groupIndex": 1
     },
     {
       "name": "HSC_1765",
       "nStars": 37.0,
+      "ageMyr": 38.77256922120208,
       "groupIndex": 1
     },
     {
       "name": "HSC_2056",
       "nStars": 51.0,
+      "ageMyr": 27.348200113840704,
       "groupIndex": 1
     },
     {
       "name": "HSC_2247",
       "nStars": 46.0,
+      "ageMyr": 13.822303215734864,
       "groupIndex": 1
     },
     {
       "name": "HSC_2453",
       "nStars": 156.0,
+      "ageMyr": 23.00183711160639,
       "groupIndex": 1
     },
     {
       "name": "NGC_2547",
       "nStars": 675.0,
+      "ageMyr": 21.70803780440731,
       "groupIndex": 1
     },
     {
       "name": "NGC_2451B",
       "nStars": 615.0,
+      "ageMyr": 27.55401126463538,
       "groupIndex": 1
     },
     {
       "name": "OC_0450",
       "nStars": 398.0,
+      "ageMyr": 21.74984800692663,
       "groupIndex": 1
     },
     {
       "name": "OCSN_64",
       "nStars": 67.0,
+      "ageMyr": 20.98343219539304,
       "groupIndex": 1
     },
     {
       "name": "OCSN_65",
       "nStars": 70.0,
+      "ageMyr": 13.092217633306351,
       "groupIndex": 1
     },
     {
       "name": "OCSN_76",
       "nStars": 119.0,
+      "ageMyr": 37.00731791718422,
       "groupIndex": 1
     },
     {
       "name": "OCSN_82",
       "nStars": 157.0,
+      "ageMyr": 23.56180705479083,
       "groupIndex": 1
     },
     {
       "name": "Theia_35",
       "nStars": 156.0,
+      "ageMyr": 30.05866210418905,
       "groupIndex": 1
     },
     {
       "name": "Theia_1918",
       "nStars": 169.0,
+      "ageMyr": 24.10580077452093,
       "groupIndex": 1
     },
     {
       "name": "UPK_535",
       "nStars": 100.0,
+      "ageMyr": 22.00792646907741,
       "groupIndex": 1
     },
     {
       "name": "UPK_540",
       "nStars": 124.0,
+      "ageMyr": 20.046802275477308,
       "groupIndex": 1
     },
     {
       "name": "BH_23",
       "nStars": 300.0,
+      "ageMyr": 9.41014024522808,
       "groupIndex": 2
     },
     {
       "name": "CWNU_1083",
       "nStars": 100.0,
+      "ageMyr": 7.670632745740519,
       "groupIndex": 2
     },
     {
       "name": "CWNU_1096",
       "nStars": 23.0,
+      "ageMyr": 4.624261660642068,
       "groupIndex": 2
     },
     {
       "name": "Gulliver_9",
       "nStars": 444.0,
+      "ageMyr": 10.132498830125613,
       "groupIndex": 2
     },
     {
       "name": "OC_0470",
       "nStars": 415.0,
+      "ageMyr": 7.007762677776589,
       "groupIndex": 2
     },
     {
       "name": "OC_0479",
       "nStars": 92.0,
+      "ageMyr": 7.160361203692278,
       "groupIndex": 2
     },
     {
       "name": "Pozzo_1",
       "nStars": 365.0,
+      "ageMyr": 9.36407990161521,
       "groupIndex": 2
     },
     {
       "name": "Alessi_5",
       "nStars": 571.0,
+      "ageMyr": 56.36561275797823,
       "groupIndex": 3
     },
     {
       "name": "CWNU_515",
       "nStars": 69.0,
+      "ageMyr": 21.3076384180439,
       "groupIndex": 3
     },
     {
       "name": "CWNU_1020",
       "nStars": 171.0,
+      "ageMyr": 34.23240550329968,
       "groupIndex": 3
     },
     {
       "name": "CWNU_1034",
       "nStars": 86.0,
+      "ageMyr": 27.48973789284616,
       "groupIndex": 3
     },
     {
       "name": "CWNU_1044",
       "nStars": 377.0,
+      "ageMyr": 34.25118473350707,
       "groupIndex": 3
     },
     {
       "name": "CWNU_1069",
       "nStars": 140.0,
+      "ageMyr": 16.317312468584298,
       "groupIndex": 3
     },
     {
       "name": "HSC_2270",
       "nStars": 23.0,
+      "ageMyr": 46.77858112299334,
       "groupIndex": 3
     },
     {
       "name": "HSC_2398",
       "nStars": 45.0,
+      "ageMyr": 28.426408982635305,
       "groupIndex": 3
     },
     {
       "name": "HSC_2442",
       "nStars": 118.0,
+      "ageMyr": 26.1493799416303,
       "groupIndex": 3
     },
     {
       "name": "HSC_2462",
       "nStars": 87.0,
+      "ageMyr": 39.714574071081856,
       "groupIndex": 3
     },
     {
       "name": "IC_2391",
       "nStars": 376.0,
+      "ageMyr": 27.32915450381889,
       "groupIndex": 3
     },
     {
       "name": "NGC_2451A",
       "nStars": 407.0,
+      "ageMyr": 26.06167193416212,
       "groupIndex": 3
     },
     {
       "name": "Platais_9",
       "nStars": 251.0,
+      "ageMyr": 36.80873314732367,
       "groupIndex": 3
     },
     {
       "name": "Theia_58",
       "nStars": 288.0,
+      "ageMyr": 23.596731377380387,
       "groupIndex": 3
     },
     {
       "name": "Theia_1315",
       "nStars": 86.0,
+      "ageMyr": 41.91422318395498,
       "groupIndex": 3
     },
     {
       "name": "Trumpler_10",
       "nStars": 1425.0,
+      "ageMyr": 36.753185030332,
       "groupIndex": 3
     },
     {
       "name": "UPK_569",
       "nStars": 145.0,
+      "ageMyr": 27.180056474243084,
       "groupIndex": 3
     },
     {
       "name": "ASCC_19",
       "nStars": 61.0,
+      "ageMyr": 7.449457931205395,
       "groupIndex": 4
     },
     {
       "name": "ASCC_21",
       "nStars": 116.0,
+      "ageMyr": 6.8982195244419575,
       "groupIndex": 4
     },
     {
       "name": "ASCC_127",
       "nStars": 247.0,
+      "ageMyr": 12.165206514936909,
       "groupIndex": 4
     },
     {
       "name": "Briceno_1",
       "nStars": 171.0,
+      "ageMyr": 8.192390845554927,
       "groupIndex": 4
     },
     {
       "name": "CWNU_519",
       "nStars": 287.0,
+      "ageMyr": 22.589785914829594,
       "groupIndex": 4
     },
     {
       "name": "CWNU_522",
       "nStars": 173.0,
+      "ageMyr": 35.80478015257619,
       "groupIndex": 4
     },
     {
       "name": "CWNU_1007",
       "nStars": 105.0,
+      "ageMyr": 19.322568839239228,
       "groupIndex": 4
     },
     {
       "name": "CWNU_1055",
       "nStars": 65.0,
+      "ageMyr": 16.501079974328732,
       "groupIndex": 4
     },
     {
       "name": "CWNU_1057",
       "nStars": 54.0,
+      "ageMyr": 15.73715118089668,
       "groupIndex": 4
     },
     {
       "name": "CWNU_1092",
       "nStars": 27.0,
+      "ageMyr": 18.878028208842657,
       "groupIndex": 4
     },
     {
       "name": "CWNU_1111",
       "nStars": 40.0,
+      "ageMyr": 21.54819903310765,
       "groupIndex": 4
     },
     {
       "name": "CWNU_1121",
       "nStars": 86.0,
+      "ageMyr": 55.00509725988113,
       "groupIndex": 4
     },
     {
       "name": "CWNU_1150",
       "nStars": 43.0,
+      "ageMyr": 65.60039466403298,
       "groupIndex": 4
     },
     {
       "name": "CWNU_1183",
       "nStars": 94.0,
+      "ageMyr": 45.87640563532731,
       "groupIndex": 4
     },
     {
       "name": "CWNU_1205",
       "nStars": 60.0,
+      "ageMyr": 20.231979657476888,
       "groupIndex": 4
     },
     {
       "name": "Collinder_69",
       "nStars": 1247.0,
+      "ageMyr": 5.239608518854334,
       "groupIndex": 4
     },
     {
       "name": "Delta_Cephei_Cluster",
       "nStars": 164.0,
+      "ageMyr": 67.34509342038584,
       "groupIndex": 4
     },
     {
       "name": "HSC_633",
       "nStars": 156.0,
+      "ageMyr": 57.4696450370646,
       "groupIndex": 4
     },
     {
       "name": "HSC_782",
       "nStars": 47.0,
+      "ageMyr": 21.399508801144016,
       "groupIndex": 4
     },
     {
       "name": "HSC_873",
       "nStars": 47.0,
+      "ageMyr": 22.16321663592764,
       "groupIndex": 4
     },
     {
       "name": "HSC_921",
       "nStars": 90.0,
+      "ageMyr": 43.10306297425655,
       "groupIndex": 4
     },
     {
       "name": "HSC_976",
       "nStars": 235.0,
+      "ageMyr": 13.488521597435811,
       "groupIndex": 4
     },
     {
       "name": "HSC_1250",
       "nStars": 34.0,
+      "ageMyr": 4.160398230156183,
       "groupIndex": 4
     },
     {
       "name": "HSC_1340",
       "nStars": 194.0,
+      "ageMyr": 26.58365351962852,
       "groupIndex": 4
     },
     {
       "name": "HSC_1633",
       "nStars": 68.0,
+      "ageMyr": 6.000501012331075,
       "groupIndex": 4
     },
     {
       "name": "HSC_1640",
       "nStars": 128.0,
+      "ageMyr": 16.615670595851444,
       "groupIndex": 4
     },
     {
       "name": "HSC_1648",
       "nStars": 78.0,
+      "ageMyr": 10.791404090249689,
       "groupIndex": 4
     },
     {
       "name": "HSC_2253",
       "nStars": 28.0,
+      "ageMyr": 69.67989088680064,
       "groupIndex": 4
     },
     {
       "name": "NGC_1980",
       "nStars": 364.0,
+      "ageMyr": 6.93720640004065,
       "groupIndex": 4
     },
     {
       "name": "NGC_2232",
       "nStars": 286.0,
+      "ageMyr": 13.275756336686223,
       "groupIndex": 4
     },
     {
       "name": "NGC_7058",
       "nStars": 424.0,
+      "ageMyr": 69.73017320148297,
       "groupIndex": 4
     },
     {
       "name": "OC_0279",
       "nStars": 146.0,
+      "ageMyr": 16.97948213579134,
       "groupIndex": 4
     },
     {
       "name": "OC_0280",
       "nStars": 78.0,
+      "ageMyr": 7.761995775248315,
       "groupIndex": 4
     },
     {
       "name": "OC_0322",
       "nStars": 53.0,
+      "ageMyr": 5.344307581214912,
       "groupIndex": 4
     },
     {
       "name": "OCSN_27",
       "nStars": 173.0,
+      "ageMyr": 14.897465639948432,
       "groupIndex": 4
     },
     {
       "name": "OCSN_28",
       "nStars": 116.0,
+      "ageMyr": 18.06267446445467,
       "groupIndex": 4
     },
     {
       "name": "OCSN_32",
       "nStars": 89.0,
+      "ageMyr": 8.52482593699841,
       "groupIndex": 4
     },
     {
       "name": "OCSN_40",
       "nStars": 169.0,
+      "ageMyr": 9.35136534884716,
       "groupIndex": 4
     },
     {
       "name": "OCSN_59",
       "nStars": 60.0,
+      "ageMyr": 5.866273185550321,
       "groupIndex": 4
     },
     {
       "name": "OCSN_61",
       "nStars": 147.0,
+      "ageMyr": 11.71970173875076,
       "groupIndex": 4
     },
     {
       "name": "RSG_5",
       "nStars": 170.0,
+      "ageMyr": 22.8630139839913,
       "groupIndex": 4
     },
     {
       "name": "Sigma_Orionis",
       "nStars": 181.0,
+      "ageMyr": 3.73219446030374,
       "groupIndex": 4
     },
     {
       "name": "Teutsch_39",
       "nStars": 60.0,
+      "ageMyr": 14.5060314432232,
       "groupIndex": 4
     },
     {
       "name": "Theia_13",
       "nStars": 249.0,
+      "ageMyr": 6.437945436121879,
       "groupIndex": 4
     },
     {
       "name": "Theia_70",
       "nStars": 78.0,
+      "ageMyr": 15.974027956114648,
       "groupIndex": 4
     },
     {
       "name": "Theia_96",
       "nStars": 140.0,
+      "ageMyr": 21.78230180941216,
       "groupIndex": 4
     },
     {
       "name": "Theia_167",
       "nStars": 52.0,
+      "ageMyr": 51.31157318868159,
       "groupIndex": 4
     },
     {
       "name": "UBC_159",
       "nStars": 232.0,
+      "ageMyr": 4.812549312943936,
       "groupIndex": 4
     },
     {
       "name": "UBC_17a",
       "nStars": 102.0,
+      "ageMyr": 4.622665142531637,
       "groupIndex": 4
     },
     {
       "name": "UPK_422",
       "nStars": 240.0,
+      "ageMyr": 14.855031241040097,
       "groupIndex": 4
     },
     {
       "name": "UPK_456",
       "nStars": 13.0,
+      "ageMyr": 69.65105424311531,
       "groupIndex": 4
     },
     {
       "name": "UPK_624",
       "nStars": 66.0,
+      "ageMyr": 25.286114440775364,
       "groupIndex": 4
     },
     {
       "name": "ZHBJZ_1",
       "nStars": 490.0,
+      "ageMyr": 13.495854456750674,
       "groupIndex": 4
     },
     {
       "name": "vdBergh_152",
       "nStars": 25.0,
+      "ageMyr": 3.99655470885256,
       "groupIndex": 4
     }
   ],
