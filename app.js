@@ -43,6 +43,30 @@ const OB_STAR_FIELD_FADE_MYR = 5.0;
 */
 const GOULD_BELT_FADE_MYR = 3.0;
 
+/*
+  Galactic z-axis visibility depends on the camera elevation relative
+  to the Galactic x-y plane.
+
+  At low elevation, the z-axis is useful and fully visible.
+
+  At high elevation, it is nearly aligned with the viewing direction
+  and becomes visually distracting, so it fades away.
+*/
+const Z_AXIS_FULL_OPACITY_ANGLE_DEG = 15.0;
+const Z_AXIS_FADE_END_DEG = 50.0;
+
+/*
+  Shift the rendered 3-D scene slightly upward in the browser viewport.
+
+  This is a projection/framing adjustment only. It does not alter:
+  - camera.position;
+  - controls.target;
+  - the point about which OrbitControls rotates.
+
+  Increase this value if the bottom x_LSR label still sits too close to
+  the time-slider readout.
+*/
+const CAMERA_VERTICAL_VIEW_OFFSET_PX = 45;
 
 const CLUSTER_GROUP_COLOURS = Object.freeze({
     alphaPer: 0xff00ff,  // magenta
@@ -755,6 +779,12 @@ async function initialise() {
         Math.max(0.1, maxExtent * 0.001),
         maxExtent * 25.0
     );
+
+    /*
+      Move the visual framing slightly upward without changing the camera's
+      physical position or orbit target.
+    */
+    updateCameraViewOffset();
 
     /*
       Use astronomical/Galactic orientation:
@@ -4206,6 +4236,52 @@ function createGalacticPlaneGrid() {
 
     scene.add(root);
 
+    /*
+      ----------------------------------------------------------------
+      Galactic z-axis
+      ----------------------------------------------------------------
+
+      The axis passes through:
+
+          x = 0
+          y = 0
+
+      and spans the full z extent of the density-domain box.
+
+      It uses independent material clones because its opacity depends
+      on camera elevation, while the x-y frame must remain fully visible.
+
+      The z axis is expressed in z_LSR coordinates.
+      Because the Galactic-plane grid is physically at z = -20 pc:
+
+          z_LSR = z_physical + 20 pc
+
+      Thus:
+          z_LSR = 0 corresponds to physical z = -20 pc.
+    */
+    const zAxis = createGalacticZAxis({
+        zLsrMin: -500.0,
+        zLsrMax: 500.0,
+
+        /*
+          Physical location of z_LSR = 0.
+        */
+        zLsrZeroPhysicalPc: zPlane,
+
+        majorIntervalPc,
+        minorIntervalPc,
+
+        majorTickLengthPc,
+        minorTickLengthPc,
+
+        sourceGlowMaterial: spineGlowMaterial,
+        sourceSpineMaterial: spineMaterial,
+        sourceTickMaterial: tickMaterial,
+    });
+
+    root.add(zAxis.root);
+
+
     const grid = {
         root,
 
@@ -4235,6 +4311,8 @@ function createGalacticPlaneGrid() {
 
         xAxisLabels,
         yAxisLabels,
+
+        zAxis,
 
         labelSprites: [
             ...xTickLabels.map(
@@ -4292,6 +4370,13 @@ function updateGalacticPlaneGridStyle() {
     for (const sprite of galacticPlaneGrid.labelSprites) {
         sprite.material.opacity = frameOpacity;
     }
+
+    /*
+      The z axis shares the grid-frame opacity, but also receives an
+      additional camera-elevation fade.
+    */
+    updateGalacticZAxisStyle();
+
 }
 
 
@@ -4433,6 +4518,602 @@ function updateGalacticPlaneGridLabels(
 
 }
 
+/* -------------------------------------------------------------------------- */
+/* GALACTIC Z AXIS                                                            */
+/* -------------------------------------------------------------------------- */
+
+function cameraElevationAboveGalacticPlaneDeg() {
+    if (!camera || !controls) {
+        return 90.0;
+    }
+
+    /*
+      Use the viewing direction, rather than camera.position alone.
+
+      This means the result remains meaningful if the camera target is
+      moved in the future.
+
+      viewVector points from the OrbitControls target toward the camera.
+    */
+    const viewVector = new THREE.Vector3()
+        .subVectors(
+            camera.position,
+            controls.target
+        );
+
+    const horizontalDistance = Math.hypot(
+        viewVector.x,
+        viewVector.y
+    );
+
+    /*
+      theta = 0 degrees:
+          camera is level with the Galactic plane
+
+      theta = 90 degrees:
+          camera is directly above or below the Galactic plane
+    */
+    const elevationRadians = Math.atan2(
+        Math.abs(viewVector.z),
+        Math.max(horizontalDistance, 1.0e-8)
+    );
+
+    return THREE.MathUtils.radToDeg(
+        elevationRadians
+    );
+}
+
+
+function zAxisCameraOpacityFactor() {
+    const elevationDeg =
+        cameraElevationAboveGalacticPlaneDeg();
+
+    /*
+      Fully visible when viewed close to edge-on.
+    */
+    if (
+        elevationDeg
+        <= Z_AXIS_FULL_OPACITY_ANGLE_DEG
+    ) {
+        return 1.0;
+    }
+
+    /*
+      Fully hidden at high elevation / near top-down view.
+    */
+    if (
+        elevationDeg
+        >= Z_AXIS_FADE_END_DEG
+    ) {
+        return 0.0;
+    }
+
+    /*
+      Smoothstep fade:
+
+      elevation = 15 deg -> 1
+      elevation = 50 deg -> 0
+    */
+    const normalizedElevation =
+        (
+            elevationDeg
+            - Z_AXIS_FULL_OPACITY_ANGLE_DEG
+        )
+        / (
+            Z_AXIS_FADE_END_DEG
+            - Z_AXIS_FULL_OPACITY_ANGLE_DEG
+        );
+
+    const smoothStep =
+        normalizedElevation
+        * normalizedElevation
+        * (
+            3.0
+            - 2.0 * normalizedElevation
+        );
+
+    return 1.0 - smoothStep;
+}
+
+
+function createGalacticZAxis(options) {
+    const {
+        zLsrMin,
+        zLsrMax,
+        zLsrZeroPhysicalPc,
+
+        majorIntervalPc,
+        minorIntervalPc,
+
+        majorTickLengthPc,
+        minorTickLengthPc,
+
+        sourceGlowMaterial,
+        sourceSpineMaterial,
+        sourceTickMaterial,
+    } = options;
+
+    const root = new THREE.Group();
+
+    root.name = 'Galactic z-axis';
+
+    /*
+      z_LSR coordinate convention:
+
+          z_LSR = z_physical - zLsrZeroPhysicalPc
+
+      Since the xy grid lies at physical z = -20 pc:
+
+          z_LSR = z_physical + 20 pc
+
+      Hence:
+          z_LSR = 0 -> z_physical = -20 pc.
+    */
+    const zLsrToPhysicalZ = (zLsr) => {
+        return zLsr + zLsrZeroPhysicalPc;
+    };
+
+    const zPhysicalMin = zLsrToPhysicalZ(
+        zLsrMin
+    );
+
+    const zPhysicalMax = zLsrToPhysicalZ(
+        zLsrMax
+    );
+
+
+    /*
+      ----------------------------------------------------------------
+      Materials
+      ----------------------------------------------------------------
+    */
+
+    const glowMaterial = sourceGlowMaterial.clone();
+
+    glowMaterial.resolution.set(
+        window.innerWidth,
+        window.innerHeight
+    );
+
+    const spineMaterial = sourceSpineMaterial.clone();
+
+    spineMaterial.resolution.set(
+        window.innerWidth,
+        window.innerHeight
+    );
+
+    const tickMaterial = sourceTickMaterial.clone();
+
+
+    /*
+      ----------------------------------------------------------------
+      Main glowing z-axis
+      ----------------------------------------------------------------
+    */
+
+    const axisPositions = new Float32Array([
+        0.0, 0.0, zPhysicalMin,
+        0.0, 0.0, zPhysicalMax,
+    ]);
+
+    const glowGeometry = new LineGeometry();
+    glowGeometry.setPositions(axisPositions);
+
+    const spineGeometry = new LineGeometry();
+    spineGeometry.setPositions(axisPositions);
+
+    const glowLine = new Line2(
+        glowGeometry,
+        glowMaterial
+    );
+
+    const spineLine = new Line2(
+        spineGeometry,
+        spineMaterial
+    );
+
+    glowLine.renderOrder = 2;
+    spineLine.renderOrder = 3;
+
+    glowLine.frustumCulled = false;
+    spineLine.frustumCulled = false;
+
+    root.add(glowLine);
+    root.add(spineLine);
+
+
+    /*
+      ----------------------------------------------------------------
+      Arrowhead at positive z_LSR
+      ----------------------------------------------------------------
+
+      Smaller and longer than the previous implementation.
+    */
+
+    const arrowHeightPc = 72.0;
+    const arrowRadiusPc = 10.0;
+
+    const arrowGeometry = new THREE.ConeGeometry(
+        arrowRadiusPc,
+        arrowHeightPc,
+        20
+    );
+
+    const arrowMaterial = new THREE.MeshBasicMaterial({
+        color: 0xf2fbff,
+
+        transparent: true,
+        opacity: 1.0,
+
+        depthTest: true,
+        depthWrite: false,
+
+        toneMapped: false,
+    });
+
+    const arrowGlowGeometry = new THREE.ConeGeometry(
+        arrowRadiusPc * 1.65,
+        arrowHeightPc * 1.20,
+        20
+    );
+
+    const arrowGlowMaterial = new THREE.MeshBasicMaterial({
+        color: 0x8fd8ff,
+
+        transparent: true,
+        opacity: 0.20,
+
+        depthTest: true,
+        depthWrite: false,
+
+        blending: THREE.AdditiveBlending,
+
+        toneMapped: false,
+    });
+
+    const arrowGlow = new THREE.Mesh(
+        arrowGlowGeometry,
+        arrowGlowMaterial
+    );
+
+    const arrow = new THREE.Mesh(
+        arrowGeometry,
+        arrowMaterial
+    );
+
+    /*
+      ConeGeometry points along local +Y by default.
+
+      Rotate it so its tip points toward physical +Z.
+    */
+    arrowGlow.rotation.x = Math.PI * 0.5;
+    arrow.rotation.x = Math.PI * 0.5;
+
+    /*
+      The axis ends at zPhysicalMax. The cone base touches that endpoint,
+      while its tip extends upward.
+    */
+    arrowGlow.position.set(
+        0.0,
+        0.0,
+        zPhysicalMax + 0.5 * arrowHeightPc
+    );
+
+    arrow.position.set(
+        0.0,
+        0.0,
+        zPhysicalMax + 0.5 * arrowHeightPc
+    );
+
+    arrowGlow.renderOrder = 2;
+    arrow.renderOrder = 4;
+
+    root.add(arrowGlow);
+    root.add(arrow);
+
+
+    /*
+      ----------------------------------------------------------------
+      Tick-and-label group
+      ----------------------------------------------------------------
+
+      Local +X points toward the camera's horizontal direction.
+
+      The group is rotated about the z axis in
+      updateGalacticZAxisCameraFacing(), so ticks remain visible as the
+      user orbits the scene.
+
+      Each tick is centered on the z axis:
+
+          -length / 2  ->  +length / 2
+
+      rather than extending only toward +X.
+    */
+
+    const tickAndLabelGroup = new THREE.Group();
+
+    tickAndLabelGroup.name =
+        'Galactic z-axis ticks and labels';
+
+    root.add(tickAndLabelGroup);
+
+    const majorTickPositions = [];
+    const minorTickPositions = [];
+
+    const majorValues = [];
+
+    const firstMinorZ =
+        Math.ceil(zLsrMin / minorIntervalPc)
+        * minorIntervalPc;
+
+    function isMajorZCoordinate(value) {
+        const scaled = value / majorIntervalPc;
+
+        return Math.abs(
+            scaled - Math.round(scaled)
+        ) < 1.0e-6;
+    }
+
+    for (
+        let zLsr = firstMinorZ;
+        zLsr <= zLsrMax + 1.0e-6;
+        zLsr += minorIntervalPc
+    ) {
+        /*
+          Do not duplicate the endpoint/spine geometry with a tick.
+        */
+        if (
+            zLsr <= zLsrMin + 1.0e-6
+            || zLsr >= zLsrMax - 1.0e-6
+        ) {
+            continue;
+        }
+
+        const isMajor = isMajorZCoordinate(
+            zLsr
+        );
+
+        const tickLength = isMajor
+            ? majorTickLengthPc
+            : minorTickLengthPc;
+
+        const targetPositions = isMajor
+            ? majorTickPositions
+            : minorTickPositions;
+
+        const zPhysical = zLsrToPhysicalZ(
+            zLsr
+        );
+
+        /*
+          Centered tick: -x to +x.
+        */
+        targetPositions.push(
+            -0.5 * tickLength,
+            0.0,
+            zPhysical,
+
+            +0.5 * tickLength,
+            0.0,
+            zPhysical
+        );
+
+        if (isMajor) {
+            majorValues.push(zLsr);
+        }
+    }
+
+    const minorTicks = makeLineSegmentsObject(
+        minorTickPositions,
+        tickMaterial,
+        3
+    );
+
+    const majorTicks = makeLineSegmentsObject(
+        majorTickPositions,
+        tickMaterial,
+        4
+    );
+
+    tickAndLabelGroup.add(minorTicks);
+    tickAndLabelGroup.add(majorTicks);
+
+
+    /*
+      ----------------------------------------------------------------
+      Major tick labels
+      ----------------------------------------------------------------
+
+      Local +X is rotated to face the camera, keeping labels visible.
+    */
+
+    const tickLabels = majorValues.map((zLsr) => {
+        const sprite = makeGridTextSprite(
+            formatGridCoordinate(zLsr),
+            {
+                fontSize: 62,
+                scaleY: 38,
+            }
+        );
+
+        const zPhysical = zLsrToPhysicalZ(
+            zLsr
+        );
+
+        sprite.position.set(
+            0.5 * majorTickLengthPc + 35.0,
+            0.0,
+            zPhysical
+        );
+
+        tickAndLabelGroup.add(sprite);
+
+        return {
+            value: zLsr,
+            sprite,
+        };
+    });
+
+
+    /*
+      ----------------------------------------------------------------
+      z_LSR axis title
+      ----------------------------------------------------------------
+    */
+
+    const axisLabel = makeGridTextSprite(
+        '𝑧ₗₛᵣ [pc]',
+        {
+            fontSize: 82,
+            scaleY: 56,
+        }
+    );
+
+    axisLabel.position.set(
+        arrowRadiusPc + 60.0,
+        0.0,
+        zPhysicalMax + arrowHeightPc + 36.0
+    );
+
+    tickAndLabelGroup.add(axisLabel);
+
+
+    return {
+        root,
+
+        zLsrMin,
+        zLsrMax,
+        zLsrZeroPhysicalPc,
+
+        zPhysicalMin,
+        zPhysicalMax,
+
+        glowMaterial,
+        spineMaterial,
+        tickMaterial,
+
+        glowLine,
+        spineLine,
+
+        arrowGlowMaterial,
+        arrowMaterial,
+
+        arrowGlow,
+        arrow,
+
+        tickAndLabelGroup,
+
+        minorTicks,
+        majorTicks,
+
+        tickLabels,
+        axisLabel,
+    };
+}
+
+function updateGalacticZAxisCameraFacing(
+    grid = galacticPlaneGrid
+) {
+    if (!grid?.zAxis || !camera) {
+        return;
+    }
+
+    const zAxis = grid.zAxis;
+
+    /*
+      Horizontal camera direction relative to the z axis.
+
+      The tick-and-label group is rotated 90 degrees away from the
+      camera azimuth. Therefore:
+
+      - tick marks are viewed broadside rather than end-on;
+      - tick labels remain visibly offset from the z axis;
+      - labels do not collapse onto the central vertical line.
+    */
+    const horizontalDistance = Math.hypot(
+        camera.position.x,
+        camera.position.y
+    );
+
+    if (horizontalDistance < 1.0e-8) {
+        return;
+    }
+
+    const cameraAzimuth = Math.atan2(
+        camera.position.y,
+        camera.position.x
+    );
+
+    /*
+      Local +X becomes perpendicular to the horizontal camera direction.
+      This keeps the tick marks visibly extended in the rendered view.
+    */
+    zAxis.tickAndLabelGroup.rotation.z =
+        cameraAzimuth + Math.PI * 0.5;
+}
+
+function updateGalacticZAxisStyle(
+    grid = galacticPlaneGrid
+) {
+    if (!grid?.zAxis) {
+        return;
+    }
+
+    const zAxis = grid.zAxis;
+
+    /*
+      Rotate ticks, tick labels, and the z-axis title toward the camera.
+    */
+    updateGalacticZAxisCameraFacing(grid);
+
+    const frameOpacity = THREE.MathUtils.clamp(
+        finiteNumber(params.gridFrameOpacity, 1.0),
+        0.0,
+        1.0
+    );
+
+    /*
+      This factor depends on camera elevation above the Galactic plane.
+    */
+    const cameraFade =
+        zAxisCameraOpacityFactor();
+
+    const finalOpacity =
+        frameOpacity
+        * cameraFade;
+
+    /*
+      Hide the entire group once opacity is effectively zero.
+
+      The parent grid itself is still controlled independently through
+      params.showGalacticPlaneGrid.
+    */
+    zAxis.root.visible = finalOpacity > 0.001;
+
+    zAxis.spineMaterial.opacity =
+        finalOpacity;
+
+    zAxis.glowMaterial.opacity =
+        finalOpacity * 0.22;
+
+    zAxis.tickMaterial.opacity =
+        finalOpacity;
+
+    zAxis.arrowMaterial.opacity =
+        finalOpacity;
+
+    zAxis.arrowGlowMaterial.opacity =
+        finalOpacity * 0.20;
+
+    for (const entry of zAxis.tickLabels) {
+        entry.sprite.material.opacity =
+            finalOpacity;
+    }
+
+    zAxis.axisLabel.material.opacity =
+        finalOpacity;
+}
+
 function makeOutline(color, opacity) {
     const geometry = new THREE.EdgesGeometry(
         new THREE.BoxGeometry(1, 1, 1)
@@ -4493,6 +5174,33 @@ async function loadArrayBuffer(url) {
     return response.arrayBuffer();
 }
 
+function updateCameraViewOffset() {
+    if (!camera) {
+        return;
+    }
+
+    /*
+      setViewOffset() changes the virtual camera viewport.
+
+      A positive vertical offset shifts the rendered scene upward in the
+      visible canvas, providing more room above the lower time slider.
+
+      The full canvas dimensions are retained, so the camera aspect ratio
+      and OrbitControls behavior remain unchanged.
+    */
+    camera.setViewOffset(
+        window.innerWidth,
+        window.innerHeight,
+
+        0,
+        CAMERA_VERTICAL_VIEW_OFFSET_PX,
+
+        window.innerWidth,
+        window.innerHeight
+    );
+
+    camera.updateProjectionMatrix();
+}
 
 function onResize() {
     renderer.setSize(
@@ -4503,8 +5211,7 @@ function onResize() {
     if (camera) {
         camera.aspect =
             window.innerWidth / window.innerHeight;
-
-        camera.updateProjectionMatrix();
+        updateCameraViewOffset();
     }
 
     if (gouldBeltMaterial) {
@@ -4529,7 +5236,23 @@ function onResize() {
             window.innerHeight
         );
 
+        /*
+          z-axis LineMaterial objects have independent material instances.
+        */
+        if (galacticPlaneGrid.zAxis) {
+            galacticPlaneGrid.zAxis.glowMaterial.resolution.set(
+                window.innerWidth,
+                window.innerHeight
+            );
+
+            galacticPlaneGrid.zAxis.spineMaterial.resolution.set(
+                window.innerWidth,
+                window.innerHeight
+            );
+        }
+
         updateGalacticPlaneGridLabels();
+        updateGalacticZAxisCameraFacing();
     }
 
     /*
