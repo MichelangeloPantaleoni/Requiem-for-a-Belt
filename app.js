@@ -10,6 +10,40 @@ import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19.2/dist/lil-gui.esm.mi
 
 const MAX_STEPS = 512;
 
+/*
+  A cluster begins fading once we go farther into the past than its age.
+
+  Example:
+      age = 20 Myr
+
+      t = -20 Myr  -> opacity 1.0
+      t = -22.5 Myr -> opacity 0.5
+      t = -25 Myr  -> opacity 0.0
+*/
+const CLUSTER_BIRTH_FADE_MYR = 5.0;
+
+
+/*
+  The present-day OB density field and Gould Belt model are gradually
+  faded away when moving away from t = 0.
+
+  They reach zero opacity at t = -5 Myr and t = +5 Myr.
+*/
+
+/*
+  OB-star density field fades from its nominal opacity at t = 0
+  to zero opacity at |t| = 5 Myr.
+*/
+const OB_STAR_FIELD_FADE_MYR = 5.0;
+
+
+/*
+  Gould Belt model fades more rapidly: from nominal opacity at t = 0
+  to zero opacity at |t| = 3 Myr.
+*/
+const GOULD_BELT_FADE_MYR = 3.0;
+
+
 const CLUSTER_GROUP_COLOURS = Object.freeze({
     alphaPer: 0xff00ff,  // magenta
     cr135: 0xff8c00,     // orange
@@ -288,7 +322,6 @@ let volumeMesh;
 let uniforms;
 
 let outerOutline;
-let clipOutline;
 
 /*
   The 3-D Gould Belt ellipse and its material.
@@ -472,19 +505,9 @@ async function initialise() {
     opticalDensity: finiteNumber(defaults.opticalDensity, 50.0),
     gamma: finiteNumber(defaults.gamma, 2.0),
 
-    steps: Math.round(finiteNumber(defaults.steps, 170)),
-
-    xMin: ranges.x[0],
-    xMax: ranges.x[1],
-
-    yMin: ranges.y[0],
-    yMax: ranges.y[1],
-
-    zMin: ranges.z[0],
-    zMax: ranges.z[1],
+    steps: Math.round(finiteNumber(defaults.steps, 100)),
 
     showBounds: true,
-    showCropBox: false,
 
     /*
       ----------------------------------------------------------------
@@ -505,7 +528,7 @@ async function initialise() {
       0 = fully transparent
       1 = fully opaque
     */
-    gouldBeltOpacity: 0.95,
+    gouldBeltOpacity: 0.50,
 
     /*
       ----------------------------------------------------------------
@@ -515,6 +538,17 @@ async function initialise() {
     showClusters: Boolean(
         clusterData.defaultControls.visible ?? true
     ),
+
+    /*
+      Trajectory trail controls.
+
+      Trails are visible by default, but at t = 0 there is no trail length,
+      so nothing is drawn until the time slider moves into the past/future.
+    */
+    showTrails: true,
+
+    trailLineWidth: 2.0,
+    trailOpacity: 0.75,
 
     clusterTime: clusterData.timesMyr[
         clusterData.zeroTimeIndex
@@ -535,9 +569,7 @@ async function initialise() {
     ),
 
 
-    resetCrop: () => {},
     resetView: () => {},
-    resetClusterTime: () => {},
 };
 
     /*
@@ -652,19 +684,20 @@ async function initialise() {
 
     scene.add(volumeMesh);
 
+
     /*
-      Outer domain outline.
+      The domain box is added directly to the scene, not as a child of the
+      density volume. Therefore it remains available at all times, even when
+      the OB-star field itself has faded out.
     */
     outerOutline = makeOutline(0x6481a0, 0.38);
+
+    outerOutline.position.copy(centre);
     outerOutline.scale.copy(extent);
+
     outerOutline.renderOrder = 2;
 
-    volumeMesh.add(outerOutline);
-
-    clipOutline = makeOutline(0x8fe7ff, 0.88);
-    clipOutline.renderOrder = 3;
-
-    volumeMesh.add(clipOutline);
+    scene.add(outerOutline);
 
 
     /*
@@ -695,9 +728,14 @@ async function initialise() {
     );
 
     /*
-      Set marker radii and colours.
+      Set sphere radii and group colours.
     */
     updateClusterStyle(true);
+
+    /*
+      Set initial line width, opacity, and colours for all trails.
+    */
+    updateClusterTrailStyle(true);
 
     /*
       Create the lower-centered trajectory slider.
@@ -708,18 +746,10 @@ async function initialise() {
 
     controls.addEventListener('change', requestRender);
 
-    const volumeMiB = rawBuffer.byteLength / 1024**2;
-
-    const clusterTimeMin = clusterData.timesMyr[0];
-    const clusterTimeMax = clusterData.timesMyr[
-        clusterData.timesMyr.length - 1
-    ];
-
-    status.textContent =
-        `${nx} × ${ny} × ${nz} density texture · `
-        + `${clusterData.clusters.length} clusters · `
-        + `${clusterData.timesMyr.length} trajectory epochs `
-        + `(${clusterTimeMin} to ${clusterTimeMax} Myr)`;
+    /*
+      The HUD intentionally contains only the title and interaction hints.
+    */
+    status.textContent = '';
 
     requestRender();
 }
@@ -747,21 +777,17 @@ function createGUI() {
 
 
     /* ====================================================================== */
-    /* OB STAR DENSITY FIELD                                                  */
+    /* 1. OB STAR DENSITY FIELD                                               */
     /* ====================================================================== */
 
     const densityFolder = gui.addFolder(
         'OB star density field [Pantaleoni et al. 2025]'
     );
 
-    /*
-      The volume is only rendered at t = 0 Myr.
-      It is automatically hidden at all other time values.
-    */
     watched(
         densityFolder
             .add(params, 'showDensity')
-            .name('Visible at t = 0')
+            .name('Show OB stars')
     );
 
     const transferFolder = densityFolder.addFolder(
@@ -804,9 +830,6 @@ function createGUI() {
             .name('Contrast gamma')
     );
 
-    transferFolder.open();
-
-
     const qualityFolder = densityFolder.addFolder(
         'Render quality'
     );
@@ -814,97 +837,101 @@ function createGUI() {
     watched(
         qualityFolder
             .add(params, 'steps', 32, MAX_STEPS, 1)
-            .name('Ray-march samples')
+            .name('Ray-march sampling')
     );
-
-
-    const cropFolder = densityFolder.addFolder(
-        'Crop volume [pc]'
-    );
-
-    const cropControllers = [];
-
-    function addCropControl(key, label, range) {
-        const controller = watched(
-            cropFolder
-                .add(
-                    params,
-                    key,
-                    range[0],
-                    range[1],
-                    (range[1] - range[0]) / 200.0
-                )
-                .name(label)
-        );
-
-        cropControllers.push(controller);
-    }
-
-    addCropControl('xMin', 'X min [pc]', ranges.x);
-    addCropControl('xMax', 'X max [pc]', ranges.x);
-
-    addCropControl('yMin', 'Y min [pc]', ranges.y);
-    addCropControl('yMax', 'Y max [pc]', ranges.y);
-
-    addCropControl('zMin', 'Z min [pc]', ranges.z);
-    addCropControl('zMax', 'Z max [pc]', ranges.z);
-
-
-    const guideFolder = densityFolder.addFolder(
-        'Volume guides'
-    );
-
-    watched(
-        guideFolder
-            .add(params, 'showBounds')
-            .name('Show domain box')
-    );
-
-    watched(
-        guideFolder
-            .add(params, 'showCropBox')
-            .name('Show crop box')
-    );
-
-
-    params.resetCrop = () => {
-        params.xMin = ranges.x[0];
-        params.xMax = ranges.x[1];
-
-        params.yMin = ranges.y[0];
-        params.yMax = ranges.y[1];
-
-        params.zMin = ranges.z[0];
-        params.zMax = ranges.z[1];
-
-        cropControllers.forEach((controller) => {
-            controller.updateDisplay();
-        });
-
-        requestRender();
-    };
-
-    densityFolder
-        .add(params, 'resetCrop')
-        .name('Reset crop');
 
 
     /* ====================================================================== */
-    /* GOULD BELT MODEL                                                       */
+    /* 2. YOUNG STELLAR CLUSTERS                                              */
+    /* ====================================================================== */
+
+    const clusterFolder = gui.addFolder(
+        'Young stellar clusters [Hunt & Reffert 2023]'
+    );
+
+    watched(
+        clusterFolder
+            .add(params, 'showClusters')
+            .name('Show clusters')
+    );
+
+    watched(
+        clusterFolder
+            .add(params, 'colorClustersByGroup')
+            .name('Colour by cluster families')
+    );
+
+    watched(
+        clusterFolder
+            .add(params, 'showTrails')
+            .name('Show cluster trails')
+    );
+
+    watched(
+        clusterFolder
+            .add(
+                params,
+                'trailLineWidth',
+                0.5,
+                12.0,
+                0.25
+            )
+            .name('Trail width [px]')
+    );
+
+    watched(
+        clusterFolder
+            .add(
+                params,
+                'trailOpacity',
+                0.0,
+                1.0,
+                0.01
+            )
+            .name('Trail opacity')
+    );
+
+    const markerFolder = clusterFolder.addFolder(
+        'Marker appearance'
+    );
+
+    watched(
+        markerFolder
+            .add(
+                params,
+                'clusterMinSize',
+                1.0,
+                80.0,
+                0.5
+            )
+            .name('Min marker size [px]')
+    );
+
+    watched(
+        markerFolder
+            .add(
+                params,
+                'clusterMaxSize',
+                1.0,
+                120.0,
+                0.5
+            )
+            .name('Max marker size [px]')
+    );
+
+
+    /* ====================================================================== */
+    /* 3. GOULD BELT MODEL                                                    */
     /* ====================================================================== */
 
     const gouldFolder = gui.addFolder(
         "Gould's Belt model [Perrot & Grenier 2003]"
     );
 
-    /*
-      Like the density field, the Gould Belt model is displayed only at
-      t = 0 Myr. It is automatically hidden at other trajectory times.
-    */
     watched(
         gouldFolder
             .add(params, 'showGouldBelt')
-            .name('Visible at t = 0')
+            .name('Show Gould Belt model')
     );
 
     watched(
@@ -933,87 +960,70 @@ function createGUI() {
 
 
     /* ====================================================================== */
-    /* STELLAR CLUSTER TRAJECTORIES                                           */
+    /* 4. GRID AND MEASURES                                                   */
     /* ====================================================================== */
 
-    const clusterFolder = gui.addFolder(
-        'Young stellar clusters [Hunt & Reffert 2023]'
+    const gridFolder = gui.addFolder(
+        'Grid and measures'
     );
 
     watched(
-        clusterFolder
-            .add(params, 'showClusters')
-            .name('Visible')
+        gridFolder
+            .add(params, 'showBounds')
+            .name('Show domain box')
     );
-
-
-    const markerFolder = clusterFolder.addFolder(
-        'Marker appearance'
-    );
-
-    watched(
-        markerFolder
-            .add(params, 'colorClustersByGroup')
-            .name('Color by group')
-    );
-
-    watched(
-        markerFolder
-            .add(
-                params,
-                'clusterMinSize',
-                1.0,
-                80.0,
-                0.5
-            )
-            .name('Min sphere diameter [px]')
-    );
-
-    watched(
-        markerFolder
-            .add(
-                params,
-                'clusterMaxSize',
-                1.0,
-                120.0,
-                0.5
-            )
-            .name('Max sphere diameter [px]')
-    );
-
-    markerFolder.open();
-
-
-    params.resetClusterTime = () => {
-        params.clusterTime = clusterLayer.timesMyr[
-            clusterLayer.zeroTimeIndex
-        ];
-
-        setClusterFrameFromTime(
-            params.clusterTime
-        );
-
-        updateExternalTimeSlider();
-
-        requestRender();
-    };
-
-    clusterFolder
-        .add(params, 'resetClusterTime')
-        .name('Go to t = 0 Myr');
 
 
     /*
-      Initial menu state.
-
-      There are only three top-level scientific-layer menus.
-      Change .open() / .close() if you prefer a different startup state.
+      Keep every top-level scientific menu collapsed at startup.
     */
     densityFolder.close();
-    gouldFolder.close();
     clusterFolder.close();
+    gouldFolder.close();
+    gridFolder.close();
 }
 
+function timeFadeOpacity(
+    timeMyr,
+    fadeDurationMyr
+) {
+    /*
+      Distance from the present epoch.
+    */
+    const distanceFromNow = Math.abs(timeMyr);
+
+    /*
+      Convert to [0, 1]:
+
+          0 at t = 0
+          1 at |t| >= fadeDurationMyr
+    */
+    const normalizedDistance = THREE.MathUtils.clamp(
+        distanceFromNow / Math.max(fadeDurationMyr, 1.0e-6),
+        0.0,
+        1.0
+    );
+
+    /*
+      Smoothstep:
+
+          smoothstep(0, 1, x) = 3x² - 2x³
+
+      Invert it so:
+
+          t = 0               -> opacity factor 1
+          |t| >= fade duration -> opacity factor 0
+    */
+    const smoothFade =
+        normalizedDistance
+        * normalizedDistance
+        * (
+            3.0
+            - 2.0 * normalizedDistance
+        );
+
+    return 1.0 - smoothFade;
+}
 
 /* -------------------------------------------------------------------------- */
 /* UPDATE UNIFORMS                                                            */
@@ -1033,24 +1043,56 @@ function syncUniforms() {
     */
     updateClusterStyle();
 
+    updateClusterTrailStyle();
+
+
     /*
       The density field and Gould Belt model are physically defined for
       the present-day frame, t = 0 Myr.
 
       They are intentionally hidden at all non-zero trajectory epochs.
     */
-    const atPresentDay =
-        Math.abs(
-            clusterLayer.timesMyr[clusterFrameIndex]
-        ) < 1.0e-8;
+
+    /*
+      Current selected trajectory epoch in Myr.
+    */
+    const selectedTimeMyr =
+        clusterLayer.timesMyr[clusterFrameIndex];
+
+    /*
+      Smoothly fade present-day-only objects as the user moves away from
+      t = 0 Myr.
+
+      At |t| >= 5 Myr this becomes exactly zero.
+    */
+    /*
+      Use separate temporal fading for the two present-day models.
+
+      OB density:
+          fully visible at t = 0
+          fades out by |t| = 5 Myr
+
+      Gould Belt:
+          fully visible at t = 0
+          fades out by |t| = 3 Myr
+    */
+    const obStarFieldFade = timeFadeOpacity(
+        selectedTimeMyr,
+        OB_STAR_FIELD_FADE_MYR
+    );
+
+    const gouldBeltFade = timeFadeOpacity(
+        selectedTimeMyr,
+        GOULD_BELT_FADE_MYR
+    );
 
     const densityIsVisible =
         Boolean(params.showDensity)
-        && atPresentDay;
+        && obStarFieldFade > 0.001;
 
     const gouldBeltIsVisible =
         Boolean(params.showGouldBelt)
-        && atPresentDay;
+        && gouldBeltFade > 0.001;
 
 
     const lower = THREE.MathUtils.clamp(
@@ -1074,12 +1116,6 @@ function syncUniforms() {
        30.0
    );
 
-   gouldBeltMaterial.opacity = THREE.MathUtils.clamp(
-       finiteNumber(params.gouldBeltOpacity, 0.95),
-       0.0,
-       1.0
-   );
-
     uniforms.uLower.value = lower;
     uniforms.uUpper.value = upper;
 
@@ -1089,11 +1125,18 @@ function syncUniforms() {
         0.5
     );
 
-    uniforms.uGlobalOpacity.value = THREE.MathUtils.clamp(
-        finiteNumber(params.opacity, 0.8),
+    const nominalDensityOpacity = THREE.MathUtils.clamp(
+        finiteNumber(params.opacity, 1.0),
         0.0,
         1.0
     );
+
+    /*
+      Fade the density field as we move away from t = 0.
+    */
+    uniforms.uGlobalOpacity.value =
+        nominalDensityOpacity
+        * obStarFieldFade;
 
     uniforms.uOpticalDensity.value = THREE.MathUtils.clamp(
         finiteNumber(params.opticalDensity, 50.0),
@@ -1115,64 +1158,6 @@ function syncUniforms() {
         )
     );
 
-    const [x0, x1] = stableInterval(
-        params.xMin,
-        params.xMax,
-        ranges.x[0],
-        ranges.x[1]
-    );
-
-    const [y0, y1] = stableInterval(
-        params.yMin,
-        params.yMax,
-        ranges.y[0],
-        ranges.y[1]
-    );
-
-    const [z0, z1] = stableInterval(
-        params.zMin,
-        params.zMax,
-        ranges.z[0],
-        ranges.z[1]
-    );
-
-    const clipMinX = (x0 - ranges.x[0]) / (ranges.x[1] - ranges.x[0]);
-    const clipMaxX = (x1 - ranges.x[0]) / (ranges.x[1] - ranges.x[0]);
-
-    const clipMinY = (y0 - ranges.y[0]) / (ranges.y[1] - ranges.y[0]);
-    const clipMaxY = (y1 - ranges.y[0]) / (ranges.y[1] - ranges.y[0]);
-
-    const clipMinZ = (z0 - ranges.z[0]) / (ranges.z[1] - ranges.z[0]);
-    const clipMaxZ = (z1 - ranges.z[0]) / (ranges.z[1] - ranges.z[0]);
-
-    uniforms.uClipMin.value.set(
-        clipMinX,
-        clipMinY,
-        clipMinZ
-    );
-
-    uniforms.uClipMax.value.set(
-        clipMaxX,
-        clipMaxY,
-        clipMaxZ
-    );
-
-    /*
-      Update visible crop box.
-    */
-    clipOutline.position.set(
-        ((clipMinX + clipMaxX) * 0.5 - 0.5) * extent.x,
-        ((clipMinY + clipMaxY) * 0.5 - 0.5) * extent.y,
-        ((clipMinZ + clipMaxZ) * 0.5 - 0.5) * extent.z
-    );
-
-    clipOutline.scale.set(
-        (clipMaxX - clipMinX) * extent.x,
-        (clipMaxY - clipMinY) * extent.y,
-        (clipMaxZ - clipMinZ) * extent.z
-    );
-
-
     /*
       Cluster layer visibility is independent of the time epoch.
     */
@@ -1180,6 +1165,36 @@ function syncUniforms() {
         groupLayer.mesh.visible = Boolean(
             params.showClusters
         );
+    }
+
+    /*
+      Trails are independently toggleable.
+
+      At t = 0, no trail is shown because its length would be zero.
+    */
+    const trailsAreVisible =
+        Boolean(params.showTrails)
+        && clusterFrameIndex !== clusterLayer.zeroTimeIndex;
+
+    for (const trail of clusterLayer.trails) {
+        /*
+          Main line: ordinary trajectory path.
+        */
+        trail.line.visible = trailsAreVisible;
+
+        /*
+          The old one-piece fade line is permanently disabled.
+        */
+        trail.fadeLine.visible = false;
+
+        /*
+          Every one-Myr fading segment has separate age-dependent opacity.
+        */
+        for (const segment of trail.fadeSegments) {
+            segment.line.visible =
+                trailsAreVisible
+                && segment.material.opacity > 0.001;
+        }
     }
 
     /*
@@ -1201,22 +1216,26 @@ function syncUniforms() {
         30.0
     );
 
-    gouldBeltMaterial.opacity = THREE.MathUtils.clamp(
-        finiteNumber(params.gouldBeltOpacity, 0.95),
+    const nominalGouldBeltOpacity = THREE.MathUtils.clamp(
+        finiteNumber(params.gouldBeltOpacity, 0.50),
         0.0,
         1.0
     );
 
     /*
-      The volume guide boxes belong to the density-field layer.
+      Fade the present-day Gould Belt model away together with the KDE field.
     */
-    outerOutline.visible =
-        densityIsVisible
-        && Boolean(params.showBounds);
+    gouldBeltMaterial.opacity =
+        nominalGouldBeltOpacity
+        * gouldBeltFade;
 
-    clipOutline.visible =
-        densityIsVisible
-        && Boolean(params.showCropBox);
+    /*
+      The domain box is independent from the OB-density visibility and
+      remains visible at every time if enabled.
+    */
+    outerOutline.visible = Boolean(
+        params.showBounds
+    );
     }
 
 
@@ -1678,6 +1697,7 @@ function parseClusterDataset(metadata, rawBuffer) {
 
         const groupIndex = Number(cluster.groupIndex);
         const nStars = Number(cluster.nStars);
+        const ageMyr = Number(cluster.ageMyr);
 
         if (
             !Number.isInteger(groupIndex)
@@ -1695,9 +1715,19 @@ function parseClusterDataset(metadata, rawBuffer) {
             );
         }
 
+        if (
+            !Number.isFinite(ageMyr)
+            || ageMyr < 0.0
+        ) {
+            throw new Error(
+                `Cluster '${cluster.name}' has an invalid ageMyr value.`
+            );
+        }
+
         return {
             name: String(cluster.name),
             nStars,
+            ageMyr,
             groupIndex,
         };
     });
@@ -1747,6 +1777,108 @@ function parseClusterDataset(metadata, rawBuffer) {
 
         defaultControls: metadata.defaultControls ?? {},
     };
+}
+
+
+function makeAgeAwareClusterMaterial(baseColour) {
+    const material = new THREE.MeshPhongMaterial({
+        /*
+          The group colour is assigned directly to the group material.
+        */
+        color: baseColour,
+
+        /*
+          A small emissive contribution keeps group colours readable on
+          the dark/shadowed hemisphere of each sphere.
+        */
+        emissive: baseColour.clone().multiplyScalar(0.12),
+        emissiveIntensity: 1.0,
+
+        shininess: 55,
+        specular: 0x666666,
+
+        /*
+          Individual alpha values are supplied through the custom
+          instanceOpacity GPU attribute.
+        */
+        transparent: true,
+        opacity: 1.0,
+
+        /*
+          Preserve correct depth handling among the spheres.
+        */
+        depthTest: true,
+        depthWrite: true,
+
+        toneMapped: false,
+    });
+
+    /*
+      Inject one per-instance opacity attribute into MeshPhongMaterial.
+
+      Every group mesh has an InstancedBufferAttribute named
+      `instanceOpacity`. This shader extension multiplies the usual
+      material opacity by that cluster-specific value.
+    */
+    material.onBeforeCompile = (shader) => {
+        shader.vertexShader = shader.vertexShader
+            .replace(
+                '#include <common>',
+                `
+#include <common>
+
+attribute float instanceOpacity;
+
+varying float vInstanceOpacity;
+`
+            )
+            .replace(
+                '#include <begin_vertex>',
+                `
+#include <begin_vertex>
+
+vInstanceOpacity = instanceOpacity;
+`
+            );
+
+        shader.fragmentShader = shader.fragmentShader
+            .replace(
+                '#include <common>',
+                `
+#include <common>
+
+varying float vInstanceOpacity;
+`
+            )
+            .replace(
+                'vec4 diffuseColor = vec4( diffuse, opacity );',
+                `
+vec4 diffuseColor = vec4( diffuse, opacity );
+
+diffuseColor.a *= clamp(
+    vInstanceOpacity,
+    0.0,
+    1.0
+);
+
+/*
+  Do not allow completely invisible clusters to write depth values.
+*/
+if (diffuseColor.a < 0.001) {
+    discard;
+}
+`
+            );
+    };
+
+    /*
+      Ensures Three.js knows this material uses a custom shader variant.
+    */
+    material.customProgramCacheKey = () => {
+        return 'cluster-age-aware-phong-v1';
+    };
+
+    return material;
 }
 
 
@@ -1835,22 +1967,26 @@ function createClusterLayer(dataset) {
     const numberOfClusters = dataset.clusters.length;
 
     /*
-      A single unit sphere geometry is shared by all five groups.
+      Base geometry shared conceptually by every cluster sphere.
 
-      Each individual cluster receives its physical radius through an
-      instance transformation matrix.
+      Each group receives a clone because every group requires its own
+      independent `instanceOpacity` attribute buffer.
     */
-    const sphereGeometry = new THREE.SphereGeometry(
+    const baseSphereGeometry = new THREE.SphereGeometry(
         1.0,
         16,
         12
     );
 
     /*
-      Create one InstancedMesh for each cluster group.
+      Create one InstancedMesh per cluster group.
 
-      This avoids the per-instance GPU colour-buffer issue entirely.
-      Each group has a normal material with a direct colour.
+      This preserves your reliable direct group-colour approach:
+      alpha Per -> magenta
+      Cr 135 -> orange
+      gamma Vel -> crimson
+      M6 -> aqua
+      others -> gray
     */
     const groupLayers = dataset.groups
         .map((group, groupIndex) => {
@@ -1869,56 +2005,42 @@ function createClusterLayer(dataset) {
                 }
             }
 
-            /*
-              A group may theoretically be empty. Do not create a mesh
-              in that case.
-            */
             if (clusterIndices.length === 0) {
                 return null;
             }
+
+            /*
+              Each group needs an independent geometry because the
+              instance-opacity attribute length differs by group.
+            */
+            const geometry = baseSphereGeometry.clone();
+
+            const instanceOpacity = new THREE.InstancedBufferAttribute(
+                new Float32Array(clusterIndices.length),
+                1
+            );
+
+            instanceOpacity.array.fill(1.0);
+
+            instanceOpacity.setUsage(
+                THREE.DynamicDrawUsage
+            );
+
+            geometry.setAttribute(
+                'instanceOpacity',
+                instanceOpacity
+            );
 
             const baseColour = new THREE.Color(
                 getClusterGroupColour(group)
             );
 
-            const material = new THREE.MeshPhongMaterial({
-                /*
-                  This is the visible group colour.
-                */
-                color: baseColour,
-
-                /*
-                  A faint emissive component ensures that the sphere is
-                  recognisably coloured even on its dark/shadowed side.
-                */
-                emissive: baseColour.clone().multiplyScalar(0.12),
-                emissiveIntensity: 1.0,
-
-                shininess: 55,
-                specular: 0x666666,
-
-                /*
-                  The density field is transparent and must be rendered
-                  first. Keeping spheres in the transparent pass with
-                  opacity = 1 draws them afterward.
-
-                  They remain visually opaque.
-                */
-                transparent: true,
-                opacity: 1.0,
-
-                /*
-                  Important: real depth-buffer writes fix the overlap
-                  problem between nearby and distant spheres.
-                */
-                depthTest: true,
-                depthWrite: true,
-
-                toneMapped: false,
-            });
+            const material = makeAgeAwareClusterMaterial(
+                baseColour
+            );
 
             const mesh = new THREE.InstancedMesh(
-                sphereGeometry,
+                geometry,
                 material,
                 clusterIndices.length
             );
@@ -1930,13 +2052,13 @@ function createClusterLayer(dataset) {
             );
 
             /*
-              Clusters may move outside the initial bounding area during
-              traceback/forward integration.
+              Traceback positions may lie outside the current camera
+              framing, so disable object-level frustum culling.
             */
             mesh.frustumCulled = false;
 
             /*
-              Draw after volume and Gould Belt.
+              Cluster spheres are rendered after the density volume.
             */
             mesh.renderOrder = 10;
 
@@ -1946,16 +2068,170 @@ function createClusterLayer(dataset) {
                 groupIndex,
                 group,
                 clusterIndices,
+
+                geometry,
                 mesh,
                 material,
+
+                instanceOpacity,
             };
         })
         .filter((groupLayer) => groupLayer !== null);
 
 
     /*
-      Lighting applies only to ordinary Three.js materials such as the
-      cluster spheres. It does not affect the custom volume shader.
+      One Line2 object per cluster trail.
+
+      Line2 is used rather than THREE.Line because it supports a
+      consistent configurable screen-space width across browsers.
+    */
+    const trails = dataset.clusters.map(
+        (cluster, clusterIndex) => {
+            const group = dataset.groups[
+                cluster.groupIndex
+            ];
+
+            /*
+              ----------------------------------------------------------------
+              Main trail geometry/material
+              ----------------------------------------------------------------
+
+              This line is fully visible from t = 0 back to the nominal
+              cluster age, or forward to the selected future epoch.
+            */
+            const geometry = new LineGeometry();
+
+            geometry.setPositions(
+                new Float32Array([
+                    0, 0, 0,
+                    0, 0, 0,
+                ])
+            );
+
+            const material = new LineMaterial({
+                color: getClusterGroupColour(group),
+
+                linewidth: params.trailLineWidth,
+
+                transparent: true,
+                opacity: params.trailOpacity,
+
+                depthTest: true,
+                depthWrite: false,
+
+                worldUnits: false,
+                toneMapped: false,
+            });
+
+            material.resolution.set(
+                window.innerWidth,
+                window.innerHeight
+            );
+
+            const line = new Line2(
+                geometry,
+                material
+            );
+
+            line.name = `${cluster.name} trajectory`;
+
+            line.renderOrder = 7;
+            line.frustumCulled = false;
+            line.visible = false;
+
+            scene.add(line);
+
+
+            /*
+              ----------------------------------------------------------------
+              Fade-tail geometry/material
+              ----------------------------------------------------------------
+
+              This second line represents only the final 5 Myr interval
+              after the cluster age is exceeded.
+
+              Its opacity smoothly drops from the nominal trail opacity to
+              zero as the slider proceeds farther into the past.
+            */
+            const fadeGeometry = new LineGeometry();
+
+            fadeGeometry.setPositions(
+                new Float32Array([
+                    0, 0, 0,
+                    0, 0, 0,
+                ])
+            );
+
+            const fadeMaterial = new LineMaterial({
+                color: getClusterGroupColour(group),
+
+                linewidth: params.trailLineWidth,
+
+                transparent: true,
+                opacity: 0.0,
+
+                depthTest: true,
+                depthWrite: false,
+
+                worldUnits: false,
+                toneMapped: false,
+            });
+
+            fadeMaterial.resolution.set(
+                window.innerWidth,
+                window.innerHeight
+            );
+
+            const fadeLine = new Line2(
+                fadeGeometry,
+                fadeMaterial
+            );
+
+            fadeLine.name = `${cluster.name} age fade trail`;
+
+            /*
+              Render just after the main trail.
+            */
+            fadeLine.renderOrder = 8;
+            fadeLine.frustumCulled = false;
+            fadeLine.visible = false;
+
+            scene.add(fadeLine);
+
+            return {
+                clusterIndex,
+
+                /*
+                  Main trail: from t = 0 to the nominal cluster age.
+                */
+                geometry,
+                material,
+                line,
+
+                /*
+                  Keep these old objects temporarily so existing code does not fail.
+                  They will always remain hidden after the changes below.
+                */
+                fadeGeometry,
+                fadeMaterial,
+                fadeLine,
+
+                /*
+                  Individual one-Myr age-fade line segments.
+
+                  Each segment has its own Line2 and LineMaterial, allowing opacity
+                  to decrease progressively along the path rather than making the
+                  entire final section equally transparent.
+                */
+                fadeSegments: [],
+            };
+        }
+    );
+
+
+    /*
+      Lighting affects only standard Three.js objects such as spheres.
+      It does not affect the custom ray-marched KDE volume shader.
     */
     const ambientLight = new THREE.AmbientLight(
         0xffffff,
@@ -1964,7 +2240,6 @@ function createClusterLayer(dataset) {
 
     scene.add(ambientLight);
 
-
     const hemisphereLight = new THREE.HemisphereLight(
         0xdceeff,
         0x263041,
@@ -1972,7 +2247,6 @@ function createClusterLayer(dataset) {
     );
 
     scene.add(hemisphereLight);
-
 
     const directionalLight = new THREE.DirectionalLight(
         0xffffff,
@@ -2003,12 +2277,9 @@ function createClusterLayer(dataset) {
         clusters: dataset.clusters,
         trajectory: dataset.trajectory,
 
-        /*
-          There are now five sphere meshes rather than one.
-        */
         groupLayers,
+        trails,
 
-        sphereGeometry,
         dummy,
 
         radiiPc: new Float32Array(numberOfClusters),
@@ -2021,8 +2292,558 @@ function createClusterLayer(dataset) {
         ),
 
         frameIndex: -1,
+
         styleSignature: '',
+        trailStyleSignature: '',
     };
+}
+
+
+function clusterAgeOpacity(
+    selectedTimeMyr,
+    clusterAgeMyr
+) {
+    /*
+      Future and present-day epochs remain fully visible.
+
+      For a cluster of age A:
+          t >= -A         -> opacity 1
+          t = -A - 2.5    -> opacity 0.5
+          t <= -A - 5     -> opacity 0
+    */
+    if (selectedTimeMyr >= -clusterAgeMyr) {
+        return 1.0;
+    }
+
+    return THREE.MathUtils.clamp(
+        1.0
+        + (
+            selectedTimeMyr
+            + clusterAgeMyr
+        ) / CLUSTER_BIRTH_FADE_MYR,
+        0.0,
+        1.0
+    );
+}
+
+
+function updateClusterAgeOpacity(selectedTimeMyr) {
+    if (!clusterLayer) {
+        return;
+    }
+
+    for (const groupLayer of clusterLayer.groupLayers) {
+        const {
+            clusterIndices,
+            instanceOpacity,
+        } = groupLayer;
+
+        for (
+            let localIndex = 0;
+            localIndex < clusterIndices.length;
+            localIndex++
+        ) {
+            const clusterIndex = clusterIndices[
+                localIndex
+            ];
+
+            const cluster = clusterLayer.clusters[
+                clusterIndex
+            ];
+
+            instanceOpacity.array[localIndex] =
+                clusterAgeOpacity(
+                    selectedTimeMyr,
+                    cluster.ageMyr
+                );
+        }
+
+        instanceOpacity.needsUpdate = true;
+    }
+}
+
+
+function buildTrailPositions(
+    clusterIndex,
+    firstFrame,
+    lastFrame,
+    frameDirection
+) {
+    const numberOfClusters =
+        clusterLayer.clusters.length;
+
+    const numberOfPoints =
+        Math.abs(lastFrame - firstFrame)
+        + 1;
+
+    const positions = new Float32Array(
+        numberOfPoints * 3
+    );
+
+    for (
+        let pointIndex = 0;
+        pointIndex < numberOfPoints;
+        pointIndex++
+    ) {
+        const frameIndex =
+            firstFrame
+            + pointIndex * frameDirection;
+
+        const sourceIndex =
+            (
+                frameIndex * numberOfClusters
+                + clusterIndex
+            ) * 3;
+
+        const destinationIndex =
+            pointIndex * 3;
+
+        positions[destinationIndex + 0] =
+            clusterLayer.trajectory[sourceIndex + 0];
+
+        positions[destinationIndex + 1] =
+            clusterLayer.trajectory[sourceIndex + 1];
+
+        positions[destinationIndex + 2] =
+            clusterLayer.trajectory[sourceIndex + 2];
+    }
+
+    return positions;
+}
+
+
+function replaceTrailGeometry(
+    trail,
+    geometryProperty,
+    lineProperty,
+    positions
+) {
+    const oldGeometry = trail[geometryProperty];
+
+    const newGeometry = new LineGeometry();
+
+    newGeometry.setPositions(positions);
+
+    trail[geometryProperty] = newGeometry;
+    trail[lineProperty].geometry = newGeometry;
+
+    oldGeometry.dispose();
+
+    trail[lineProperty].computeLineDistances();
+}
+
+
+function disposeFadeSegments(trail) {
+    /*
+      Remove and dispose every individual age-fade segment for one cluster.
+
+      This is called each time the selected trajectory epoch changes, so
+      the visible fade region always exactly matches the selected time.
+    */
+    for (const segment of trail.fadeSegments) {
+        scene.remove(segment.line);
+
+        segment.geometry.dispose();
+        segment.material.dispose();
+    }
+
+    trail.fadeSegments = [];
+}
+
+
+function createFadeTrailSegment(
+    trail,
+    firstFrame,
+    lastFrame,
+    fadeFactor
+) {
+    /*
+      A single short 1-Myr trajectory segment.
+
+      `fadeFactor` is in [0, 1] and represents the age-dependent
+      multiplier before applying the user-selected nominal trail opacity.
+    */
+    const positions = buildTrailPositions(
+        trail.clusterIndex,
+        firstFrame,
+        lastFrame,
+        -1
+    );
+
+    const geometry = new LineGeometry();
+    geometry.setPositions(positions);
+
+    const material = new LineMaterial({
+        color: trail.material.color.clone(),
+
+        linewidth: THREE.MathUtils.clamp(
+            finiteNumber(params.trailLineWidth, 2.0),
+            0.5,
+            15.0
+        ),
+
+        transparent: true,
+
+        opacity:
+            THREE.MathUtils.clamp(
+                finiteNumber(params.trailOpacity, 0.75),
+                0.0,
+                1.0
+            )
+            * fadeFactor,
+
+        depthTest: true,
+        depthWrite: false,
+
+        worldUnits: false,
+        toneMapped: false,
+    });
+
+    material.resolution.set(
+        window.innerWidth,
+        window.innerHeight
+    );
+
+    const line = new Line2(
+        geometry,
+        material
+    );
+
+    line.name = `${trail.line.name} age-fade segment`;
+
+    /*
+      Draw fade segments after the main path but before the cluster sphere.
+    */
+    line.renderOrder = 8;
+
+    line.frustumCulled = false;
+
+    /*
+      Its final visibility is also controlled later in syncUniforms().
+    */
+    line.visible =
+        Boolean(params.showTrails)
+        && material.opacity > 0.001;
+
+    scene.add(line);
+
+    trail.fadeSegments.push({
+        geometry,
+        material,
+        line,
+
+        /*
+          Store this so a GUI change to trail opacity can update the
+          segment correctly without rebuilding the whole time path.
+        */
+        fadeFactor,
+    });
+}
+
+
+function updateClusterTrails() {
+    if (!clusterLayer) {
+        return;
+    }
+
+    const currentFrame = clusterLayer.frameIndex;
+    const presentFrame = clusterLayer.zeroTimeIndex;
+
+    const currentTimeMyr = clusterLayer.timesMyr[
+        currentFrame
+    ];
+
+    /*
+      At t = 0, remove every dynamic fade segment and hide all trails.
+
+      This explicitly fixes the small leftover segments you observed after
+      travelling to the past and returning to the present.
+    */
+    if (currentFrame === presentFrame) {
+        for (const trail of clusterLayer.trails) {
+            trail.line.visible = false;
+
+            /*
+              Old single fade line is no longer used.
+            */
+            trail.fadeLine.visible = false;
+
+            /*
+              Remove all dynamically created one-Myr fade segments.
+            */
+            disposeFadeSegments(trail);
+        }
+
+        return;
+    }
+
+    const movingIntoFuture =
+        currentFrame > presentFrame;
+
+    for (const trail of clusterLayer.trails) {
+        const cluster = clusterLayer.clusters[
+            trail.clusterIndex
+        ];
+
+        /*
+          Always clear the old set of individual fading segments before
+          generating the correct new set for the current time.
+        */
+        disposeFadeSegments(trail);
+
+        /*
+          The old single fade line is permanently disabled.
+        */
+        trail.fadeLine.visible = false;
+
+        /*
+          ----------------------------------------------------------------
+          Future trajectories
+          ----------------------------------------------------------------
+
+          Cluster ages do not truncate future integrations.
+        */
+        if (movingIntoFuture) {
+            const positions = buildTrailPositions(
+                trail.clusterIndex,
+                presentFrame,
+                currentFrame,
+                1
+            );
+
+            replaceTrailGeometry(
+                trail,
+                'geometry',
+                'line',
+                positions
+            );
+
+            continue;
+        }
+
+        /*
+          ----------------------------------------------------------------
+          Past trajectories
+          ----------------------------------------------------------------
+        */
+        const ageBoundaryTime = -cluster.ageMyr;
+
+        const fadeEndTime =
+            -cluster.ageMyr
+            - CLUSTER_BIRTH_FADE_MYR;
+
+        const ageBoundaryFrame =
+            nearestClusterFrameIndex(
+                ageBoundaryTime
+            );
+
+        const fadeEndFrame =
+            nearestClusterFrameIndex(
+                fadeEndTime
+            );
+
+        /*
+          The selected time is younger than the nominal cluster age.
+
+          Draw one ordinary path from t = 0 to the selected time.
+        */
+        if (currentTimeMyr >= ageBoundaryTime) {
+            const positions = buildTrailPositions(
+                trail.clusterIndex,
+                presentFrame,
+                currentFrame,
+                -1
+            );
+
+            replaceTrailGeometry(
+                trail,
+                'geometry',
+                'line',
+                positions
+            );
+
+            continue;
+        }
+
+        /*
+          The selected time is older than the cluster age.
+
+          Draw the ordinary full-opacity path only down to the age limit.
+        */
+        const mainPositions = buildTrailPositions(
+            trail.clusterIndex,
+            presentFrame,
+            ageBoundaryFrame,
+            -1
+        );
+
+        replaceTrailGeometry(
+            trail,
+            'geometry',
+            'line',
+            mainPositions
+        );
+
+        /*
+          Do not allow trail geometry beyond age + 5 Myr into the past.
+
+          Because indices increase toward the future:
+              currentFrame = selected past time
+              fadeEndFrame = oldest permitted trail time
+
+          max() selects the less-negative / allowed endpoint.
+        */
+        const cappedEndFrame = Math.max(
+            currentFrame,
+            fadeEndFrame
+        );
+
+        /*
+          Build individual 1-Myr segments from the age boundary toward
+          the selected ancient epoch.
+
+          Example for age = 20 Myr and selected t = -23 Myr:
+
+              main trail:
+                  0 -> -20
+
+              fading segments:
+                  -20 -> -21
+                  -21 -> -22
+                  -22 -> -23
+        */
+        for (
+            let firstFrame = ageBoundaryFrame;
+            firstFrame > cappedEndFrame;
+            firstFrame--
+        ) {
+            const lastFrame = firstFrame - 1;
+
+            /*
+              Opacity is based on the age of the older endpoint of this
+              specific segment.
+
+              Thus the sequence progressively fades away in time:
+                  -20 -> -21 : relatively bright
+                  -21 -> -22 : dimmer
+                  ...
+                  -24 -> -25 : nearly invisible
+            */
+            const segmentEndTime = clusterLayer.timesMyr[
+                lastFrame
+            ];
+
+            const fadeFactor = clusterAgeOpacity(
+                segmentEndTime,
+                cluster.ageMyr
+            );
+
+            /*
+              Do not create visually invisible geometry.
+            */
+            if (fadeFactor <= 0.001) {
+                continue;
+            }
+
+            createFadeTrailSegment(
+                trail,
+                firstFrame,
+                lastFrame,
+                fadeFactor
+            );
+        }
+    }
+}
+
+
+function updateClusterTrailStyle(force = false) {
+    if (!clusterLayer) {
+        return;
+    }
+
+    const lineWidth = THREE.MathUtils.clamp(
+        finiteNumber(params.trailLineWidth, 2.0),
+        0.5,
+        15.0
+    );
+
+    const trailOpacity = THREE.MathUtils.clamp(
+        finiteNumber(params.trailOpacity, 0.75),
+        0.0,
+        1.0
+    );
+
+    const colorByGroup = Boolean(
+        params.colorClustersByGroup
+    );
+
+    const styleSignature = [
+        lineWidth,
+        trailOpacity,
+        colorByGroup,
+    ].join('|');
+
+    if (
+        !force
+        && clusterLayer.trailStyleSignature
+        === styleSignature
+    ) {
+        return;
+    }
+
+    for (const trail of clusterLayer.trails) {
+        const cluster = clusterLayer.clusters[
+            trail.clusterIndex
+        ];
+
+        const group = clusterLayer.groups[
+            cluster.groupIndex
+        ];
+
+        const displayColour = new THREE.Color(
+            colorByGroup
+                ? getClusterGroupColour(group)
+                : 0xffffff
+        );
+
+        /*
+          Main trail appearance.
+        */
+        trail.material.color.copy(
+            displayColour
+        );
+
+        trail.material.linewidth = lineWidth;
+        trail.material.opacity = trailOpacity;
+
+
+        /*
+          Update every separately rendered fading segment.
+
+          Each one has its own age-dependent fadeFactor, so all segments preserve
+          the progressive opacity gradient when the user changes the global
+          trail opacity, width, or group-colour setting.
+        */
+        for (const segment of trail.fadeSegments) {
+            segment.material.color.copy(
+                displayColour
+            );
+
+            segment.material.linewidth = lineWidth;
+
+            segment.material.opacity =
+                trailOpacity
+                * segment.fadeFactor;
+        }
+
+        /*
+          The old one-piece fade line is no longer used.
+        */
+        trail.fadeLine.visible = false;
+    }
+
+    clusterLayer.trailStyleSignature =
+        styleSignature;
 }
 
 
@@ -2095,9 +2916,20 @@ function setClusterFrameFromTime(timeMyr) {
     clusterLayer.frameIndex = frameIndex;
 
     /*
-      The position of every sphere is encoded in its instance matrix.
+      Update cluster positions at the selected trajectory epoch.
     */
     updateClusterTransforms(true);
+
+    /*
+      Fade individual cluster spheres if the selected time is farther into
+      the past than their age.
+    */
+    updateClusterAgeOpacity(canonicalTime);
+
+    /*
+      Rebuild paths from t = 0 to the selected time.
+    */
+    updateClusterTrails();
 
     return frameIndex;
 }
@@ -2261,37 +3093,6 @@ function makeOutline(color, opacity) {
 }
 
 
-function stableInterval(a, b, low, high) {
-    let left = THREE.MathUtils.clamp(
-        finiteNumber(a, low),
-        low,
-        high
-    );
-
-    let right = THREE.MathUtils.clamp(
-        finiteNumber(b, high),
-        low,
-        high
-    );
-
-    if (left > right) {
-        [left, right] = [right, left];
-    }
-
-    const epsilon = Math.max((high - low) * 1.0e-3, 1.0e-6);
-
-    if (right - left < epsilon) {
-        if (right + epsilon <= high) {
-            right += epsilon;
-        } else {
-            left -= epsilon;
-        }
-    }
-
-    return [left, right];
-}
-
-
 function readRange(value, name) {
     if (!Array.isArray(value) || value.length !== 2) {
         throw new Error(`Invalid ${name} in density.json.`);
@@ -2354,6 +3155,38 @@ function onResize() {
             window.innerWidth,
             window.innerHeight
         );
+    }
+
+    /*
+      LineMaterial widths are screen-space pixel widths, so each trajectory
+      material must know the current browser dimensions.
+    */
+    if (clusterLayer) {
+        for (const trail of clusterLayer.trails) {
+            trail.material.resolution.set(
+                window.innerWidth,
+                window.innerHeight
+            );
+
+            /*
+              Old fade material is retained only for compatibility, but hidden.
+            */
+            trail.fadeMaterial.resolution.set(
+                window.innerWidth,
+                window.innerHeight
+            );
+
+            /*
+              Every dynamically-created fading segment needs the current canvas
+              resolution because LineMaterial uses screen-space pixel width.
+            */
+            for (const segment of trail.fadeSegments) {
+                segment.material.resolution.set(
+                    window.innerWidth,
+                    window.innerHeight
+                );
+            }
+        }
     }
 
     /*

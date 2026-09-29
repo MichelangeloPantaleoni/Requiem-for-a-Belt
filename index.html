@@ -59,6 +59,15 @@
       color: rgba(190, 210, 235, 0.55);
     }
 
+    .hint-heading {
+      margin-bottom: 2px;
+
+      color: rgba(230, 240, 255, 0.85);
+
+      font-size: 12px;
+      font-weight: 700;
+    }
+
     #error {
       position: fixed;
       inset: 20px;
@@ -119,7 +128,7 @@
     */
     #time-readout {
       position: absolute;
-      bottom: 42px;
+      bottom: 44px;
       left: 50%;
       z-index: 4;
 
@@ -328,7 +337,7 @@
       }
 
       #time-readout {
-        bottom: 40px;
+        bottom: 42px;
         font-size: 12px;
       }
     }
@@ -340,11 +349,16 @@
   <div id="app"></div>
 
   <div id="hud">
-    <div id="title">OB-star KDE density field</div>
-    <div id="status">Loading 3-D density texture...</div>
+    <div id="title">
+      &quot;Requiem for a belt&quot; interactive visualization tool
+    </div>
+
+    <div id="status" aria-live="polite"></div>
+
     <div id="hint">
-      Left drag: orbit · Wheel: zoom · Right drag: pan<br>
-      Density controls use normalized log-KDE values. Crop sliders use pc.
+      <div class="hint-heading">Instructions:</div>
+
+      Left drag: orbit · Wheel: zoom · Right drag: pan
     </div>
   </div>
 
