@@ -287,6 +287,130 @@ void main() {
 
 
 /* -------------------------------------------------------------------------- */
+/* SUN GLOW SHADERS                                                           */
+/* -------------------------------------------------------------------------- */
+
+/*
+  A perspective-scaled glowing point.
+
+  Unlike the older cluster point sprites, this point has an apparent
+  size determined by its physical diameter and camera distance:
+
+      apparent size ∝ physical diameter / camera distance
+
+  Therefore it naturally grows larger as the camera gets closer.
+*/
+const SUN_VERTEX_SHADER = /* glsl */ `
+precision highp float;
+
+uniform float uDiameterPc;
+uniform float uProjectionScale;
+uniform float uMaxPointSize;
+
+void main() {
+    vec4 mvPosition = modelViewMatrix * vec4(
+        position,
+        1.0
+    );
+
+    /*
+      Camera-space depth.
+
+      In Three.js camera coordinates, objects in front of the camera
+      generally have negative z values.
+    */
+    float depth = max(-mvPosition.z, 0.001);
+
+    /*
+      Convert physical Sun diameter in pc into screen-space pixels.
+
+      uProjectionScale is based on camera FOV and drawing-buffer height.
+    */
+    float pointSize =
+        uDiameterPc
+        * uProjectionScale
+        / depth;
+
+    gl_PointSize = clamp(
+        pointSize,
+        2.0,
+        uMaxPointSize
+    );
+
+    gl_Position = projectionMatrix * mvPosition;
+}
+`;
+
+
+const SUN_FRAGMENT_SHADER = /* glsl */ `
+precision highp float;
+
+void main() {
+    /*
+      Convert point coordinates into a circular local coordinate system.
+    */
+    vec2 localPoint =
+        gl_PointCoord * 2.0 - 1.0;
+
+    float radiusSquared = dot(
+        localPoint,
+        localPoint
+    );
+
+    if (radiusSquared > 1.0) {
+        discard;
+    }
+
+    /*
+      Compact bright core plus a soft yellow halo.
+    */
+    float core = exp(
+        -18.0 * radiusSquared
+    );
+
+    float halo = exp(
+        -3.4 * radiusSquared
+    );
+
+    /*
+      Smoothly remove the square point-sprite boundary.
+    */
+    float edge =
+        1.0 - smoothstep(
+            0.78,
+            1.0,
+            sqrt(radiusSquared)
+        );
+
+    float alpha =
+        (
+            0.92 * core
+            + 0.20 * halo
+        )
+        * edge;
+
+    vec3 sunYellow = vec3(
+        1.00,
+        0.76,
+        0.12
+    );
+
+    vec3 colour =
+        sunYellow
+        * (
+            0.40 * halo
+            + 1.35 * core
+        );
+
+    gl_FragColor = vec4(
+        colour,
+        alpha
+    );
+}
+`;
+
+
+/* -------------------------------------------------------------------------- */
 /* INITIALIZATION                                                             */
 /* -------------------------------------------------------------------------- */
 
@@ -324,6 +448,11 @@ let uniforms;
 let outerOutline;
 
 /*
+  Galactic-plane coordinate grid at z = 0.
+*/
+let galacticPlaneGrid = null;
+
+/*
   The 3-D Gould Belt ellipse and its material.
   Keeping the material as a separate variable allows the GUI
   to update opacity and line width immediately.
@@ -336,6 +465,11 @@ let gouldBeltMaterial;
   and current trajectory frame.
 */
 let clusterLayer = null;
+
+/*
+  Dynamic glowing Sun marker.
+*/
+let sunLayer = null;
 
 let timeSliderInitialised = false;
 
@@ -372,6 +506,7 @@ async function initialise() {
         colorMap,
         clusterMetadata,
         clusterRawBuffer,
+        sunMetadata,
     ] = await Promise.all([
         loadJSON('./data/density.json'),
         loadArrayBuffer('./data/density.u8'),
@@ -379,6 +514,8 @@ async function initialise() {
 
         loadJSON('./data/cluster_trajectories.json'),
         loadArrayBuffer('./data/cluster_trajectories.f32'),
+
+        loadJSON('./data/sun_trajectory.json'),
     ]);
 
 
@@ -390,6 +527,10 @@ async function initialise() {
         clusterRawBuffer
     );
 
+    const sunData = parseSunDataset(
+        sunMetadata,
+        clusterData.timesMyr
+    );
 
     if (
         !Array.isArray(metadata.dimensions)
@@ -507,7 +648,25 @@ async function initialise() {
 
     steps: Math.round(finiteNumber(defaults.steps, 100)),
 
-    showBounds: true,
+    showBounds: false,
+
+    /*
+      ----------------------------------------------------------------
+      Galactic-plane coordinate grid controls
+      ----------------------------------------------------------------
+    */
+    showGalacticPlaneGrid: true,
+
+    /*
+      Opacity of the outer frame, major/minor ticks, tick labels,
+      and axis labels.
+    */
+    gridFrameOpacity: 1.00,
+
+    /*
+      Opacity of the internal x/y grid lines.
+    */
+    gridLineOpacity: 0.30,
 
     /*
       ----------------------------------------------------------------
@@ -568,6 +727,21 @@ async function initialise() {
         22.0
     ),
 
+    /*
+      ----------------------------------------------------------------
+      Sun controls
+      ----------------------------------------------------------------
+    */
+    showSun: true,
+
+    /*
+      Physical apparent-diameter calibration in pc.
+
+      This is not intended as the literal physical solar diameter. It is
+      a visual marker diameter used to keep the Sun visible in a pc-scale
+      Galactic visualization.
+    */
+    sunDiameterPc: 85.0,
 
     resetView: () => {},
 };
@@ -699,6 +873,13 @@ async function initialise() {
 
     scene.add(outerOutline);
 
+    /*
+      Galactic-plane coordinate grid.
+
+      It is added directly to the scene and remains independent from the
+      density field, cluster trajectories, and time selection.
+    */
+    galacticPlaneGrid = createGalacticPlaneGrid();
 
     /*
       Create the 3-D Gould Belt ellipse.
@@ -720,11 +901,20 @@ async function initialise() {
     */
     clusterLayer = createClusterLayer(clusterData);
 
+    sunLayer = createSunLayer(sunData);
+
     /*
       Start at t = 0 Myr.
     */
     setClusterFrameFromTime(
         params.clusterTime
+    );
+
+    /*
+      Place the Sun at its t = 0 position initially.
+    */
+    updateSunFrame(
+        clusterLayer.zeroTimeIndex
     );
 
     /*
@@ -919,9 +1109,34 @@ function createGUI() {
             .name('Max marker size [px]')
     );
 
+    /* ====================================================================== */
+    /* 3. SUN                                                                 */
+    /* ====================================================================== */
+
+    const sunFolder = gui.addFolder(
+        'Sun'
+    );
+
+    watched(
+        sunFolder
+            .add(params, 'showSun')
+            .name('Visible Sun')
+    );
+
+    watched(
+        sunFolder
+            .add(
+                params,
+                'sunDiameterPc',
+                1.0,
+                300.0,
+                1.0
+            )
+            .name('Glow diameter [pc]')
+    );
 
     /* ====================================================================== */
-    /* 3. GOULD BELT MODEL                                                    */
+    /* 4. GOULD BELT MODEL                                                    */
     /* ====================================================================== */
 
     const gouldFolder = gui.addFolder(
@@ -960,11 +1175,11 @@ function createGUI() {
 
 
     /* ====================================================================== */
-    /* 4. GRID AND MEASURES                                                   */
+    /* 5. GRID AND COORDINATES                                                */
     /* ====================================================================== */
 
     const gridFolder = gui.addFolder(
-        'Grid and measures'
+        'Grid and coordinates'
     );
 
     watched(
@@ -973,12 +1188,43 @@ function createGUI() {
             .name('Show domain box')
     );
 
+    watched(
+        gridFolder
+            .add(params, 'showGalacticPlaneGrid')
+            .name('Show Galactic-plane grid')
+    );
+
+    watched(
+        gridFolder
+            .add(
+                params,
+                'gridFrameOpacity',
+                0.0,
+                1.0,
+                0.01
+            )
+            .name('Frame, ticks and labels')
+    );
+
+    watched(
+        gridFolder
+            .add(
+                params,
+                'gridLineOpacity',
+                0.0,
+                1.0,
+                0.01
+            )
+            .name('Internal grid lines')
+    );
+
 
     /*
       Keep every top-level scientific menu collapsed at startup.
     */
     densityFolder.close();
     clusterFolder.close();
+    sunFolder.close();
     gouldFolder.close();
     gridFolder.close();
 }
@@ -1036,6 +1282,11 @@ function syncUniforms() {
     const clusterFrameIndex = setClusterFrameFromTime(
         params.clusterTime
     );
+
+    /*
+      Move the Sun to the matching trajectory epoch.
+    */
+    updateSunFrame(clusterFrameIndex);
 
     /*
       Recalculate marker colours and sizes only if a relevant control
@@ -1168,6 +1419,20 @@ function syncUniforms() {
     }
 
     /*
+      The Sun remains independently visible at every selected epoch.
+    */
+    sunLayer.points.visible = Boolean(
+        params.showSun
+    );
+
+    sunLayer.material.uniforms.uDiameterPc.value =
+        THREE.MathUtils.clamp(
+            finiteNumber(params.sunDiameterPc, 85.0),
+            1.0,
+            300.0
+        );
+
+    /*
       Trails are independently toggleable.
 
       At t = 0, no trail is shown because its length would be zero.
@@ -1236,8 +1501,24 @@ function syncUniforms() {
     outerOutline.visible = Boolean(
         params.showBounds
     );
-    }
 
+    /*
+      Galactic plane grid is independent from time and all scientific layers.
+    */
+    if (galacticPlaneGrid) {
+        galacticPlaneGrid.root.visible = Boolean(
+            params.showGalacticPlaneGrid
+        );
+
+        updateGalacticPlaneGridStyle();
+
+        /*
+          Labels move to the border sides nearest the camera as the user
+          rotates around the scene.
+        */
+        updateGalacticPlaneGridLabels();
+    }
+}
 
 /* -------------------------------------------------------------------------- */
 /* RENDERING                                                                  */
@@ -1779,6 +2060,267 @@ function parseClusterDataset(metadata, rawBuffer) {
     };
 }
 
+
+/* -------------------------------------------------------------------------- */
+/* SUN TRAJECTORY DATA                                                        */
+/* -------------------------------------------------------------------------- */
+
+function parseSunDataset(
+    metadata,
+    referenceTimesMyr
+) {
+    if (
+        !metadata
+        || !Array.isArray(metadata.timesMyr)
+        || !Array.isArray(metadata.positionsPc)
+    ) {
+        throw new Error(
+            'sun_trajectory.json has an invalid structure.'
+        );
+    }
+
+    const timesMyr = metadata.timesMyr.map(Number);
+
+    if (
+        timesMyr.length !== referenceTimesMyr.length
+    ) {
+        throw new Error(
+            'Sun trajectory time grid does not match '
+            + 'the cluster trajectory time grid.'
+        );
+    }
+
+    for (
+        let index = 0;
+        index < referenceTimesMyr.length;
+        index++
+    ) {
+        if (
+            Math.abs(
+                timesMyr[index]
+                - referenceTimesMyr[index]
+            ) > 1.0e-8
+        ) {
+            throw new Error(
+                'Sun trajectory times do not match '
+                + 'the cluster trajectory times.'
+            );
+        }
+    }
+
+    if (
+        metadata.positionsPc.length
+        !== timesMyr.length
+    ) {
+        throw new Error(
+            'sun_trajectory.json has a different number of '
+            + 'positions and time values.'
+        );
+    }
+
+    const positions = new Float32Array(
+        timesMyr.length * 3
+    );
+
+    for (
+        let index = 0;
+        index < metadata.positionsPc.length;
+        index++
+    ) {
+        const position = metadata.positionsPc[index];
+
+        if (
+            !Array.isArray(position)
+            || position.length !== 3
+        ) {
+            throw new Error(
+                `Invalid Sun position at time index ${index}.`
+            );
+        }
+
+        const x = Number(position[0]);
+        const y = Number(position[1]);
+        const z = Number(position[2]);
+
+        if (
+            !Number.isFinite(x)
+            || !Number.isFinite(y)
+            || !Number.isFinite(z)
+        ) {
+            throw new Error(
+                `Non-finite Sun coordinate at time index ${index}.`
+            );
+        }
+
+        positions[3 * index + 0] = x;
+        positions[3 * index + 1] = y;
+        positions[3 * index + 2] = z;
+    }
+
+    return {
+        timesMyr,
+        positions,
+    };
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* SUN GLOW MARKER                                                            */
+/* -------------------------------------------------------------------------- */
+
+function createSunLayer(dataset) {
+    const geometry = new THREE.BufferGeometry();
+
+    const positionAttribute =
+        new THREE.BufferAttribute(
+            new Float32Array([0, 0, 0]),
+            3
+        );
+
+    positionAttribute.setUsage(
+        THREE.DynamicDrawUsage
+    );
+
+    geometry.setAttribute(
+        'position',
+        positionAttribute
+    );
+
+    const gl = renderer.getContext();
+
+    const pointSizeRange = gl.getParameter(
+        gl.ALIASED_POINT_SIZE_RANGE
+    );
+
+    const material = new THREE.ShaderMaterial({
+        uniforms: {
+            uDiameterPc: {
+                value: params.sunDiameterPc,
+            },
+
+            /*
+              Updated after resize because it depends on drawing-buffer
+              dimensions and camera FOV.
+            */
+            uProjectionScale: {
+                value: 1.0,
+            },
+
+            uMaxPointSize: {
+                value: Number(pointSizeRange[1]),
+            },
+        },
+
+        vertexShader: SUN_VERTEX_SHADER,
+        fragmentShader: SUN_FRAGMENT_SHADER,
+
+        transparent: true,
+
+        depthTest: true,
+        depthWrite: false,
+
+        /*
+          Additive blending gives the yellow halo a luminous appearance.
+        */
+        blending: THREE.AdditiveBlending,
+
+        toneMapped: false,
+    });
+
+    const points = new THREE.Points(
+        geometry,
+        material
+    );
+
+    points.name = 'Sun';
+
+    /*
+      The Sun may move beyond the initial camera bounds, so do not permit
+      stale automatic bounds to hide it.
+    */
+    points.frustumCulled = false;
+
+    /*
+      Render above trails and cluster spheres.
+    */
+    points.renderOrder = 12;
+
+    scene.add(points);
+
+    const layer = {
+        timesMyr: dataset.timesMyr,
+        positions: dataset.positions,
+
+        geometry,
+        positionAttribute,
+        material,
+        points,
+
+        frameIndex: -1,
+    };
+
+    updateSunProjectionScale(layer);
+
+    return layer;
+}
+
+
+function updateSunProjectionScale(layer = sunLayer) {
+    if (!layer || !camera) {
+        return;
+    }
+
+    const drawingBufferSize =
+        renderer.getDrawingBufferSize(
+            new THREE.Vector2()
+        );
+
+    const verticalFovRadians =
+        THREE.MathUtils.degToRad(
+            camera.fov
+        );
+
+    /*
+      Perspective projection scale in actual drawing-buffer pixels.
+    */
+    const projectionScale =
+        drawingBufferSize.y
+        / (
+            2.0
+            * Math.tan(
+                verticalFovRadians * 0.5
+            )
+        );
+
+    layer.material.uniforms.uProjectionScale.value =
+        projectionScale;
+}
+
+
+function updateSunFrame(frameIndex) {
+    if (!sunLayer) {
+        return;
+    }
+
+    if (sunLayer.frameIndex === frameIndex) {
+        return;
+    }
+
+    const sourceIndex = frameIndex * 3;
+
+    sunLayer.positionAttribute.array[0] =
+        sunLayer.positions[sourceIndex + 0];
+
+    sunLayer.positionAttribute.array[1] =
+        sunLayer.positions[sourceIndex + 1];
+
+    sunLayer.positionAttribute.array[2] =
+        sunLayer.positions[sourceIndex + 2];
+
+    sunLayer.positionAttribute.needsUpdate = true;
+
+    sunLayer.frameIndex = frameIndex;
+}
 
 function makeAgeAwareClusterMaterial(baseColour) {
     const material = new THREE.MeshPhongMaterial({
@@ -3075,6 +3617,821 @@ function updateClusterStyle(force = false) {
     clusterLayer.styleSignature = styleSignature;
 }
 
+/* -------------------------------------------------------------------------- */
+/* GALACTIC-PLANE GRID                                                        */
+/* -------------------------------------------------------------------------- */
+
+function makeLineSegmentsObject(
+    positions,
+    material,
+    renderOrder = 1
+) {
+    const geometry = new THREE.BufferGeometry();
+
+    geometry.setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute(
+            positions,
+            3
+        )
+    );
+
+    const lines = new THREE.LineSegments(
+        geometry,
+        material
+    );
+
+    lines.renderOrder = renderOrder;
+
+    return lines;
+}
+
+
+function makeGridTextSprite(
+    text,
+    options = {}
+) {
+    const {
+        fontSize = 54,
+        fontFamily = 'Georgia, Times New Roman, serif',
+        colour = 'rgba(245, 250, 255, 1.0)',
+        padding = 18,
+        scaleX = 100,
+        scaleY = 34,
+    } = options;
+
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    /*
+      Use a high-resolution canvas so labels remain reasonably sharp.
+    */
+    const deviceScale = 4;
+
+    context.font = `${fontSize}px ${fontFamily}`;
+
+    const textWidth = Math.ceil(
+        context.measureText(text).width
+    );
+
+    canvas.width = Math.ceil(
+        (textWidth + 2 * padding) * deviceScale
+    );
+
+    canvas.height = Math.ceil(
+        (fontSize + 2 * padding) * deviceScale
+    );
+
+    context.scale(
+        deviceScale,
+        deviceScale
+    );
+
+    context.font = `${fontSize}px ${fontFamily}`;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+
+    /*
+      Soft dark shadow keeps labels readable over bright density regions.
+    */
+    context.shadowColor = 'rgba(0, 0, 0, 0.90)';
+    context.shadowBlur = 7;
+    context.shadowOffsetX = 1;
+    context.shadowOffsetY = 1;
+
+    context.fillStyle = colour;
+
+    context.fillText(
+        text,
+        canvas.width / (2 * deviceScale),
+        canvas.height / (2 * deviceScale)
+    );
+
+    const texture = new THREE.CanvasTexture(canvas);
+
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+
+    const material = new THREE.SpriteMaterial({
+        map: texture,
+
+        transparent: true,
+        opacity: 1.0,
+
+        depthTest: false,
+        depthWrite: false,
+
+        toneMapped: false,
+    });
+
+    const sprite = new THREE.Sprite(material);
+
+
+    /*
+      Sprite dimensions are measured in scene pc units. Sprites naturally
+      become larger on screen as the camera approaches them.
+    */
+
+    /*
+      Preserve the canvas aspect ratio. This prevents characters such as
+      "0" from appearing horizontally compressed.
+    */
+    const aspectRatio =
+        canvas.width / canvas.height;
+
+    sprite.scale.set(
+        scaleY * aspectRatio,
+        scaleY,
+        1.0
+    );
+
+    sprite.renderOrder = 6;
+
+    return sprite;
+}
+
+
+function formatGridCoordinate(value) {
+    /*
+      Coordinates are generated at exact 200-pc intervals, but round
+      defensively to avoid labels such as "-199.999999".
+    */
+    const rounded = Math.round(value);
+
+    return String(rounded);
+}
+
+
+function createGalacticPlaneGrid() {
+    const root = new THREE.Group();
+
+    root.name = 'Galactic plane coordinate grid';
+
+    /*
+      The actual geometric grid sits exactly on the Galactic plane.
+    */
+    const zPlane = -20.0;
+
+    const xMin = ranges.x[0];
+    const xMax = ranges.x[1];
+
+    const yMin = ranges.y[0];
+    const yMax = ranges.y[1];
+
+    const majorIntervalPc = 200.0;
+    const minorIntervalPc = 50.0;
+
+    /*
+      Tick lengths point inward from the square border.
+    */
+    const majorTickLengthPc = 26.0;
+    const minorTickLengthPc = 13.0;
+
+    /*
+      Labels are lifted slightly above z = 0 to keep them visually
+      separate from the grid itself.
+    */
+    const labelZ = -14.0;
+
+    /*
+      ----------------------------------------------------------------
+      Materials
+      ----------------------------------------------------------------
+    */
+
+    const gridMaterial = new THREE.LineBasicMaterial({
+        color: 0x83c7ff,
+
+        transparent: true,
+        opacity: params.gridLineOpacity,
+
+        depthTest: true,
+        depthWrite: false,
+
+        toneMapped: false,
+    });
+
+    const tickMaterial = new THREE.LineBasicMaterial({
+        color: 0xe8f5ff,
+
+        transparent: true,
+        opacity: params.gridFrameOpacity,
+
+        depthTest: true,
+        depthWrite: false,
+
+        toneMapped: false,
+    });
+
+    /*
+      Broad translucent blue line behind the main frame:
+      this approximates the glow used on the external time slider.
+    */
+    const spineGlowMaterial = new LineMaterial({
+        color: 0x8fd8ff,
+
+        linewidth: 8.0,
+
+        transparent: true,
+        opacity: params.gridFrameOpacity * 0.20,
+
+        depthTest: true,
+        depthWrite: false,
+
+        blending: THREE.AdditiveBlending,
+
+        worldUnits: false,
+        toneMapped: false,
+    });
+
+    const spineMaterial = new LineMaterial({
+        color: 0xf2fbff,
+
+        linewidth: 2.0,
+
+        transparent: true,
+        opacity: params.gridFrameOpacity,
+
+        depthTest: true,
+        depthWrite: false,
+
+        worldUnits: false,
+        toneMapped: false,
+    });
+
+    spineGlowMaterial.resolution.set(
+        window.innerWidth,
+        window.innerHeight
+    );
+
+    spineMaterial.resolution.set(
+        window.innerWidth,
+        window.innerHeight
+    );
+
+
+    /*
+      ----------------------------------------------------------------
+      Internal major grid lines: every 200 pc
+      ----------------------------------------------------------------
+    */
+
+    const gridPositions = [];
+
+    const firstMajorX =
+        Math.ceil(xMin / majorIntervalPc)
+        * majorIntervalPc;
+
+    const firstMajorY =
+        Math.ceil(yMin / majorIntervalPc)
+        * majorIntervalPc;
+
+    for (
+        let x = firstMajorX;
+        x <= xMax + 1.0e-6;
+        x += majorIntervalPc
+    ) {
+        /*
+          Boundary grid lines are already represented by the outer frame.
+        */
+        if (
+            x <= xMin + 1.0e-6
+            || x >= xMax - 1.0e-6
+        ) {
+            continue;
+        }
+
+        gridPositions.push(
+            x, yMin, zPlane,
+            x, yMax, zPlane
+        );
+    }
+
+    for (
+        let y = firstMajorY;
+        y <= yMax + 1.0e-6;
+        y += majorIntervalPc
+    ) {
+        if (
+            y <= yMin + 1.0e-6
+            || y >= yMax - 1.0e-6
+        ) {
+            continue;
+        }
+
+        gridPositions.push(
+            xMin, y, zPlane,
+            xMax, y, zPlane
+        );
+    }
+
+    const gridLines = makeLineSegmentsObject(
+        gridPositions,
+        gridMaterial,
+        1
+    );
+
+    root.add(gridLines);
+
+
+    /*
+      ----------------------------------------------------------------
+      Outer glowing frame
+      ----------------------------------------------------------------
+    */
+
+    const framePositions = new Float32Array([
+        xMin, yMin, zPlane,
+        xMax, yMin, zPlane,
+
+        xMax, yMin, zPlane,
+        xMax, yMax, zPlane,
+
+        xMax, yMax, zPlane,
+        xMin, yMax, zPlane,
+
+        xMin, yMax, zPlane,
+        xMin, yMin, zPlane,
+    ]);
+
+    const frameGlowGeometry = new LineGeometry();
+    frameGlowGeometry.setPositions(
+        framePositions
+    );
+
+    const frameGeometry = new LineGeometry();
+    frameGeometry.setPositions(
+        framePositions
+    );
+
+    const frameGlow = new Line2(
+        frameGlowGeometry,
+        spineGlowMaterial
+    );
+
+    const frame = new Line2(
+        frameGeometry,
+        spineMaterial
+    );
+
+    frameGlow.renderOrder = 2;
+    frame.renderOrder = 3;
+
+    frameGlow.frustumCulled = false;
+    frame.frustumCulled = false;
+
+    root.add(frameGlow);
+    root.add(frame);
+
+
+    /*
+      ----------------------------------------------------------------
+      Major/minor inward ticks
+      ----------------------------------------------------------------
+    */
+
+    const majorTickPositions = [];
+    const minorTickPositions = [];
+
+    const majorXValues = [];
+    const majorYValues = [];
+
+    const firstMinorX =
+        Math.ceil(xMin / minorIntervalPc)
+        * minorIntervalPc;
+
+    const firstMinorY =
+        Math.ceil(yMin / minorIntervalPc)
+        * minorIntervalPc;
+
+    function isMajorCoordinate(value) {
+        const scaled = value / majorIntervalPc;
+
+        return Math.abs(
+            scaled - Math.round(scaled)
+        ) < 1.0e-6;
+    }
+
+    /*
+      Ticks along the x direction:
+      - bottom edge points upward/inward;
+      - top edge points downward/inward.
+    */
+    for (
+        let x = firstMinorX;
+        x <= xMax + 1.0e-6;
+        x += minorIntervalPc
+    ) {
+        if (
+            x <= xMin + 1.0e-6
+            || x >= xMax - 1.0e-6
+        ) {
+            continue;
+        }
+
+        const major = isMajorCoordinate(x);
+
+        const length = major
+            ? majorTickLengthPc
+            : minorTickLengthPc;
+
+        const target = major
+            ? majorTickPositions
+            : minorTickPositions;
+
+        target.push(
+            x, yMin, zPlane,
+            x, yMin + length, zPlane,
+
+            x, yMax, zPlane,
+            x, yMax - length, zPlane
+        );
+
+        if (major) {
+            majorXValues.push(x);
+        }
+    }
+
+    /*
+      Ticks along the y direction:
+      - left edge points right/inward;
+      - right edge points left/inward.
+    */
+    for (
+        let y = firstMinorY;
+        y <= yMax + 1.0e-6;
+        y += minorIntervalPc
+    ) {
+        if (
+            y <= yMin + 1.0e-6
+            || y >= yMax - 1.0e-6
+        ) {
+            continue;
+        }
+
+        const major = isMajorCoordinate(y);
+
+        const length = major
+            ? majorTickLengthPc
+            : minorTickLengthPc;
+
+        const target = major
+            ? majorTickPositions
+            : minorTickPositions;
+
+        target.push(
+            xMin, y, zPlane,
+            xMin + length, y, zPlane,
+
+            xMax, y, zPlane,
+            xMax - length, y, zPlane
+        );
+
+        if (major) {
+            majorYValues.push(y);
+        }
+    }
+
+    const minorTicks = makeLineSegmentsObject(
+        minorTickPositions,
+        tickMaterial,
+        3
+    );
+
+    const majorTicks = makeLineSegmentsObject(
+        majorTickPositions,
+        tickMaterial,
+        4
+    );
+
+    root.add(minorTicks);
+    root.add(majorTicks);
+
+
+    /*
+      ----------------------------------------------------------------
+      Numerical coordinate labels
+      ----------------------------------------------------------------
+
+      The label positions are updated continuously so they stay on the
+      x/y sides closest to the current camera position.
+    */
+
+    const xTickLabels = majorXValues.map((xValue) => {
+        const sprite = makeGridTextSprite(
+            formatGridCoordinate(xValue),
+            {
+                fontSize: 90,
+                scaleY: 38,
+            }
+        );
+
+        root.add(sprite);
+
+        return {
+            value: xValue,
+            sprite,
+        };
+    });
+
+    const yTickLabels = majorYValues.map((yValue) => {
+        const sprite = makeGridTextSprite(
+            formatGridCoordinate(yValue),
+            {
+                fontSize: 90,
+                scaleY: 38,
+            }
+        );
+
+        root.add(sprite);
+
+        return {
+            value: yValue,
+            sprite,
+        };
+    });
+
+
+    /*
+      Axis labels. The mathematical italic letters and subscript-like
+      characters give a TeX-inspired appearance without an external
+      MathJax/KaTeX dependency.
+    */
+    /*
+      Axis labels are placed on both opposite sides of the grid.
+    */
+    const xAxisLabels = [
+        makeGridTextSprite(
+            '𝑥ₗₛᵣ [pc]',
+            {
+                fontSize: 82,
+                scaleY: 56,
+            }
+        ),
+        makeGridTextSprite(
+            '𝑥ₗₛᵣ [pc]',
+            {
+                fontSize: 82,
+                scaleY: 56,
+            }
+        ),
+    ];
+
+    const yAxisLabels = [
+        makeGridTextSprite(
+            '𝑦ₗₛᵣ [pc]',
+            {
+                fontSize: 82,
+                scaleY: 56,
+            }
+        ),
+        makeGridTextSprite(
+            '𝑦ₗₛᵣ [pc]',
+            {
+                fontSize: 82,
+                scaleY: 56,
+            }
+        ),
+    ];
+
+    for (const label of xAxisLabels) {
+        root.add(label);
+    }
+
+    for (const label of yAxisLabels) {
+        root.add(label);
+    }
+
+    root.visible = false;
+
+    scene.add(root);
+
+    const grid = {
+        root,
+
+        xMin,
+        xMax,
+        yMin,
+        yMax,
+
+        zPlane,
+        labelZ,
+
+        gridMaterial,
+        tickMaterial,
+
+        spineGlowMaterial,
+        spineMaterial,
+
+        gridLines,
+        minorTicks,
+        majorTicks,
+
+        frameGlow,
+        frame,
+
+        xTickLabels,
+        yTickLabels,
+
+        xAxisLabels,
+        yAxisLabels,
+
+        labelSprites: [
+            ...xTickLabels.map(
+                entry => entry.sprite
+            ),
+            ...yTickLabels.map(
+                entry => entry.sprite
+            ),
+            ...xAxisLabels,
+            ...yAxisLabels,
+        ],
+    };
+
+    /*
+      Place labels correctly before the first render.
+    */
+    updateGalacticPlaneGridLabels(grid);
+
+    return grid;
+}
+
+
+function updateGalacticPlaneGridStyle() {
+    if (!galacticPlaneGrid) {
+        return;
+    }
+
+    const frameOpacity = THREE.MathUtils.clamp(
+        finiteNumber(params.gridFrameOpacity, 1.00),
+        0.0,
+        1.0
+    );
+
+    const lineOpacity = THREE.MathUtils.clamp(
+        finiteNumber(params.gridLineOpacity, 0.30),
+        0.0,
+        1.0
+    );
+
+    galacticPlaneGrid.gridMaterial.opacity =
+        lineOpacity;
+
+    galacticPlaneGrid.tickMaterial.opacity =
+        frameOpacity;
+
+    galacticPlaneGrid.spineMaterial.opacity =
+        frameOpacity;
+
+    /*
+      Keep the blue-white halo subtle but visible.
+    */
+    galacticPlaneGrid.spineGlowMaterial.opacity =
+        frameOpacity * 0.22;
+
+    for (const sprite of galacticPlaneGrid.labelSprites) {
+        sprite.material.opacity = frameOpacity;
+    }
+}
+
+
+function updateGalacticPlaneGridLabels(
+    grid = galacticPlaneGrid
+) {
+    if (!grid) {
+        return;
+    }
+
+    /*
+      Labels are intentionally shown on both opposing sides.
+
+      X-coordinate labels:
+          yMin side and yMax side
+
+      Y-coordinate labels:
+          xMin side and xMax side
+    */
+    const tickOffset = 34.0;
+    const titleOffset = 88.0;
+
+    /*
+      Major x-coordinate labels on the two y boundaries.
+    */
+    for (const entry of grid.xTickLabels) {
+        /*
+          Every x tick now owns two sprites: one for each side.
+          This is initialized below if necessary.
+        */
+        if (!entry.sprites) {
+            entry.sprites = [
+                entry.sprite,
+                makeGridTextSprite(
+                    formatGridCoordinate(entry.value),
+                    {
+                        fontSize: 90,
+                        scaleY: 38,
+                    }
+                ),
+            ];
+
+            grid.root.add(entry.sprites[1]);
+            grid.labelSprites.push(entry.sprites[1]);
+        }
+
+        entry.sprites[0].position.set(
+            entry.value,
+            grid.yMin - tickOffset,
+            grid.labelZ
+        );
+
+        entry.sprites[1].position.set(
+            entry.value,
+            grid.yMax + tickOffset,
+            grid.labelZ
+        );
+    }
+
+    /*
+      Major y-coordinate labels on the two x boundaries.
+    */
+    for (const entry of grid.yTickLabels) {
+        if (!entry.sprites) {
+            entry.sprites = [
+                entry.sprite,
+                makeGridTextSprite(
+                    formatGridCoordinate(entry.value),
+                    {
+                        fontSize: 90,
+                        scaleY: 38,
+                    }
+                ),
+            ];
+
+            grid.root.add(entry.sprites[1]);
+            grid.labelSprites.push(entry.sprites[1]);
+        }
+
+        entry.sprites[0].position.set(
+            grid.xMin - tickOffset,
+            entry.value,
+            grid.labelZ
+        );
+
+        entry.sprites[1].position.set(
+            grid.xMax + tickOffset,
+            entry.value,
+            grid.labelZ
+        );
+    }
+
+    /*
+      Axis titles appear only on the sides nearest the camera.
+    */
+    const xSideIsNearYMin =
+        Math.abs(camera.position.y - grid.yMin)
+        <= Math.abs(camera.position.y - grid.yMax);
+
+    const ySideIsNearXMin =
+        Math.abs(camera.position.x - grid.xMin)
+        <= Math.abs(camera.position.x - grid.xMax);
+
+    /*
+      x_LSR: nearest y boundary.
+    */
+    grid.xAxisLabels[0].visible = xSideIsNearYMin;
+    grid.xAxisLabels[1].visible = !xSideIsNearYMin;
+
+    grid.xAxisLabels[0].position.set(
+        0.5 * (grid.xMin + grid.xMax),
+        grid.yMin - titleOffset,
+        grid.labelZ
+    );
+
+    grid.xAxisLabels[1].position.set(
+        0.5 * (grid.xMin + grid.xMax),
+        grid.yMax + titleOffset,
+        grid.labelZ
+    );
+
+    /*
+      y_LSR: nearest x boundary.
+    */
+    grid.yAxisLabels[0].visible = ySideIsNearXMin;
+    grid.yAxisLabels[1].visible = !ySideIsNearXMin;
+
+    grid.yAxisLabels[0].position.set(
+        grid.xMin - titleOffset,
+        0.5 * (grid.yMin + grid.yMax),
+        grid.labelZ
+    );
+
+    grid.yAxisLabels[1].position.set(
+        grid.xMax + titleOffset,
+        0.5 * (grid.yMin + grid.yMax),
+        grid.labelZ
+    );
+
+}
 
 function makeOutline(color, opacity) {
     const geometry = new THREE.EdgesGeometry(
@@ -3155,6 +4512,24 @@ function onResize() {
             window.innerWidth,
             window.innerHeight
         );
+    }
+
+    if (sunLayer) {
+        updateSunProjectionScale();
+    }
+
+    if (galacticPlaneGrid) {
+        galacticPlaneGrid.spineGlowMaterial.resolution.set(
+            window.innerWidth,
+            window.innerHeight
+        );
+
+        galacticPlaneGrid.spineMaterial.resolution.set(
+            window.innerWidth,
+            window.innerHeight
+        );
+
+        updateGalacticPlaneGridLabels();
     }
 
     /*
