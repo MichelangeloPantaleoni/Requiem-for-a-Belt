@@ -1,0 +1,972 @@
+{
+  "format": "gould-cluster-trajectories-v1",
+  "layout": "Little-endian Float32; [timeIndex][clusterIndex][coordinate], coordinate order = x,y,z",
+  "trajectoryShape": [
+    121,
+    160,
+    3
+  ],
+  "timesMyr": [
+    -60.0,
+    -59.0,
+    -58.0,
+    -57.0,
+    -56.0,
+    -55.0,
+    -54.0,
+    -53.0,
+    -52.0,
+    -51.0,
+    -50.0,
+    -49.0,
+    -48.0,
+    -47.0,
+    -46.0,
+    -45.0,
+    -44.0,
+    -43.0,
+    -42.0,
+    -41.0,
+    -40.0,
+    -39.0,
+    -38.0,
+    -37.0,
+    -36.0,
+    -35.0,
+    -34.0,
+    -33.0,
+    -32.0,
+    -31.0,
+    -30.0,
+    -29.0,
+    -28.0,
+    -27.0,
+    -26.0,
+    -25.0,
+    -24.0,
+    -23.0,
+    -22.0,
+    -21.0,
+    -20.0,
+    -19.0,
+    -18.0,
+    -17.0,
+    -16.0,
+    -15.0,
+    -14.0,
+    -13.0,
+    -12.0,
+    -11.0,
+    -10.0,
+    -9.0,
+    -8.0,
+    -7.0,
+    -6.0,
+    -5.0,
+    -4.0,
+    -3.0,
+    -2.0,
+    -1.0,
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0,
+    10.0,
+    11.0,
+    12.0,
+    13.0,
+    14.0,
+    15.0,
+    16.0,
+    17.0,
+    18.0,
+    19.0,
+    20.0,
+    21.0,
+    22.0,
+    23.0,
+    24.0,
+    25.0,
+    26.0,
+    27.0,
+    28.0,
+    29.0,
+    30.0,
+    31.0,
+    32.0,
+    33.0,
+    34.0,
+    35.0,
+    36.0,
+    37.0,
+    38.0,
+    39.0,
+    40.0,
+    41.0,
+    42.0,
+    43.0,
+    44.0,
+    45.0,
+    46.0,
+    47.0,
+    48.0,
+    49.0,
+    50.0,
+    51.0,
+    52.0,
+    53.0,
+    54.0,
+    55.0,
+    56.0,
+    57.0,
+    58.0,
+    59.0,
+    60.0
+  ],
+  "timeStepMyr": 1.0,
+  "groups": [
+    {
+      "id": "alphaPer",
+      "label": "alpha Per",
+      "color": "#ff00ff"
+    },
+    {
+      "id": "cr135",
+      "label": "Cr 135",
+      "color": "#ff8c00"
+    },
+    {
+      "id": "gammaVel",
+      "label": "gamma Vel",
+      "color": "#dc143c"
+    },
+    {
+      "id": "m6",
+      "label": "M6",
+      "color": "#00ffff"
+    },
+    {
+      "id": "other",
+      "label": "Other Gould clusters",
+      "color": "#9e9e9e"
+    }
+  ],
+  "clusters": [
+    {
+      "name": "ADS_16795",
+      "nStars": 41.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "ASCC_100",
+      "nStars": 87.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "CWNU_1015",
+      "nStars": 98.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "CWNU_1129",
+      "nStars": 34.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "CWNU_1143",
+      "nStars": 73.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "Chamaleon_I",
+      "nStars": 192.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "Gaia_8",
+      "nStars": 150.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_381",
+      "nStars": 288.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_415",
+      "nStars": 35.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_474",
+      "nStars": 86.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_958",
+      "nStars": 107.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_1020",
+      "nStars": 25.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_1318",
+      "nStars": 52.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_1438",
+      "nStars": 110.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_1553",
+      "nStars": 330.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_2068",
+      "nStars": 28.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_2139",
+      "nStars": 67.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_2216",
+      "nStars": 11.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_2468",
+      "nStars": 210.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_2505",
+      "nStars": 119.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_2523",
+      "nStars": 21.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_2630",
+      "nStars": 29.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_2636",
+      "nStars": 284.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_2733",
+      "nStars": 165.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_2816",
+      "nStars": 76.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_2907",
+      "nStars": 349.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_2919",
+      "nStars": 175.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_2931",
+      "nStars": 40.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "HSC_2986",
+      "nStars": 222.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "IC_2602",
+      "nStars": 638.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "IC_4665",
+      "nStars": 308.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "Mamajek_1",
+      "nStars": 19.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "Mamajek_3",
+      "nStars": 33.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "Melotte_20",
+      "nStars": 938.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "OC_0666",
+      "nStars": 64.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "OCSN_10",
+      "nStars": 121.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "OCSN_24",
+      "nStars": 58.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "OCSN_92",
+      "nStars": 103.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "OCSN_96",
+      "nStars": 223.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "OCSN_98",
+      "nStars": 75.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "OCSN_100",
+      "nStars": 87.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "Platais_6",
+      "nStars": 53.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "Platais_8",
+      "nStars": 225.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "Stephenson_1",
+      "nStars": 322.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "Teutsch_179",
+      "nStars": 112.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "Theia_23",
+      "nStars": 121.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "Theia_53",
+      "nStars": 123.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "Theia_54",
+      "nStars": 48.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "Theia_65",
+      "nStars": 37.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "Theia_66",
+      "nStars": 39.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "Theia_67",
+      "nStars": 56.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "Theia_69",
+      "nStars": 31.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "Theia_72",
+      "nStars": 140.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "Theia_232",
+      "nStars": 152.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "UPK_116",
+      "nStars": 76.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "UPK_606",
+      "nStars": 80.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "UPK_640",
+      "nStars": 764.0,
+      "groupIndex": 0
+    },
+    {
+      "name": "ASCC_18",
+      "nStars": 82.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "ASCC_20",
+      "nStars": 194.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "Alessi_34",
+      "nStars": 857.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "Alessi_36",
+      "nStars": 198.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "CWNU_1024",
+      "nStars": 336.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "CWNU_1072",
+      "nStars": 60.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "CWNU_1144",
+      "nStars": 77.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "Collinder_135",
+      "nStars": 209.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "Collinder_140",
+      "nStars": 203.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "FoF_2383",
+      "nStars": 422.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "HSC_1765",
+      "nStars": 37.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "HSC_2056",
+      "nStars": 51.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "HSC_2247",
+      "nStars": 46.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "HSC_2453",
+      "nStars": 156.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "NGC_2547",
+      "nStars": 675.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "NGC_2451B",
+      "nStars": 615.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "OC_0450",
+      "nStars": 398.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "OCSN_64",
+      "nStars": 67.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "OCSN_65",
+      "nStars": 70.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "OCSN_76",
+      "nStars": 119.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "OCSN_82",
+      "nStars": 157.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "Theia_35",
+      "nStars": 156.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "Theia_1918",
+      "nStars": 169.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "UPK_535",
+      "nStars": 100.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "UPK_540",
+      "nStars": 124.0,
+      "groupIndex": 1
+    },
+    {
+      "name": "BH_23",
+      "nStars": 300.0,
+      "groupIndex": 2
+    },
+    {
+      "name": "CWNU_1083",
+      "nStars": 100.0,
+      "groupIndex": 2
+    },
+    {
+      "name": "CWNU_1096",
+      "nStars": 23.0,
+      "groupIndex": 2
+    },
+    {
+      "name": "Gulliver_9",
+      "nStars": 444.0,
+      "groupIndex": 2
+    },
+    {
+      "name": "OC_0470",
+      "nStars": 415.0,
+      "groupIndex": 2
+    },
+    {
+      "name": "OC_0479",
+      "nStars": 92.0,
+      "groupIndex": 2
+    },
+    {
+      "name": "Pozzo_1",
+      "nStars": 365.0,
+      "groupIndex": 2
+    },
+    {
+      "name": "Alessi_5",
+      "nStars": 571.0,
+      "groupIndex": 3
+    },
+    {
+      "name": "CWNU_515",
+      "nStars": 69.0,
+      "groupIndex": 3
+    },
+    {
+      "name": "CWNU_1020",
+      "nStars": 171.0,
+      "groupIndex": 3
+    },
+    {
+      "name": "CWNU_1034",
+      "nStars": 86.0,
+      "groupIndex": 3
+    },
+    {
+      "name": "CWNU_1044",
+      "nStars": 377.0,
+      "groupIndex": 3
+    },
+    {
+      "name": "CWNU_1069",
+      "nStars": 140.0,
+      "groupIndex": 3
+    },
+    {
+      "name": "HSC_2270",
+      "nStars": 23.0,
+      "groupIndex": 3
+    },
+    {
+      "name": "HSC_2398",
+      "nStars": 45.0,
+      "groupIndex": 3
+    },
+    {
+      "name": "HSC_2442",
+      "nStars": 118.0,
+      "groupIndex": 3
+    },
+    {
+      "name": "HSC_2462",
+      "nStars": 87.0,
+      "groupIndex": 3
+    },
+    {
+      "name": "IC_2391",
+      "nStars": 376.0,
+      "groupIndex": 3
+    },
+    {
+      "name": "NGC_2451A",
+      "nStars": 407.0,
+      "groupIndex": 3
+    },
+    {
+      "name": "Platais_9",
+      "nStars": 251.0,
+      "groupIndex": 3
+    },
+    {
+      "name": "Theia_58",
+      "nStars": 288.0,
+      "groupIndex": 3
+    },
+    {
+      "name": "Theia_1315",
+      "nStars": 86.0,
+      "groupIndex": 3
+    },
+    {
+      "name": "Trumpler_10",
+      "nStars": 1425.0,
+      "groupIndex": 3
+    },
+    {
+      "name": "UPK_569",
+      "nStars": 145.0,
+      "groupIndex": 3
+    },
+    {
+      "name": "ASCC_19",
+      "nStars": 61.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "ASCC_21",
+      "nStars": 116.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "ASCC_127",
+      "nStars": 247.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "Briceno_1",
+      "nStars": 171.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "CWNU_519",
+      "nStars": 287.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "CWNU_522",
+      "nStars": 173.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "CWNU_1007",
+      "nStars": 105.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "CWNU_1055",
+      "nStars": 65.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "CWNU_1057",
+      "nStars": 54.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "CWNU_1092",
+      "nStars": 27.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "CWNU_1111",
+      "nStars": 40.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "CWNU_1121",
+      "nStars": 86.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "CWNU_1150",
+      "nStars": 43.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "CWNU_1183",
+      "nStars": 94.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "CWNU_1205",
+      "nStars": 60.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "Collinder_69",
+      "nStars": 1247.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "Delta_Cephei_Cluster",
+      "nStars": 164.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "HSC_633",
+      "nStars": 156.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "HSC_782",
+      "nStars": 47.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "HSC_873",
+      "nStars": 47.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "HSC_921",
+      "nStars": 90.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "HSC_976",
+      "nStars": 235.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "HSC_1250",
+      "nStars": 34.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "HSC_1340",
+      "nStars": 194.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "HSC_1633",
+      "nStars": 68.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "HSC_1640",
+      "nStars": 128.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "HSC_1648",
+      "nStars": 78.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "HSC_2253",
+      "nStars": 28.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "NGC_1980",
+      "nStars": 364.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "NGC_2232",
+      "nStars": 286.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "NGC_7058",
+      "nStars": 424.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "OC_0279",
+      "nStars": 146.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "OC_0280",
+      "nStars": 78.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "OC_0322",
+      "nStars": 53.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "OCSN_27",
+      "nStars": 173.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "OCSN_28",
+      "nStars": 116.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "OCSN_32",
+      "nStars": 89.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "OCSN_40",
+      "nStars": 169.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "OCSN_59",
+      "nStars": 60.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "OCSN_61",
+      "nStars": 147.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "RSG_5",
+      "nStars": 170.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "Sigma_Orionis",
+      "nStars": 181.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "Teutsch_39",
+      "nStars": 60.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "Theia_13",
+      "nStars": 249.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "Theia_70",
+      "nStars": 78.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "Theia_96",
+      "nStars": 140.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "Theia_167",
+      "nStars": 52.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "UBC_159",
+      "nStars": 232.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "UBC_17a",
+      "nStars": 102.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "UPK_422",
+      "nStars": 240.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "UPK_456",
+      "nStars": 13.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "UPK_624",
+      "nStars": 66.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "ZHBJZ_1",
+      "nStars": 490.0,
+      "groupIndex": 4
+    },
+    {
+      "name": "vdBergh_152",
+      "nStars": 25.0,
+      "groupIndex": 4
+    }
+  ],
+  "nStarsRange": [
+    11.0,
+    1425.0
+  ],
+  "defaultControls": {
+    "visible": true,
+    "colorByGroup": true,
+    "minMarkerSize": 9.0,
+    "maxMarkerSize": 22.0
+  }
+}
