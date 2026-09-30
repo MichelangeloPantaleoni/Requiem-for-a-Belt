@@ -26,46 +26,384 @@
       inset: 0;
     }
 
-    #hud {
+    /*
+      Shared fixed left-side overlay.
+
+      The HUD and the Legend are ordinary vertically stacked children inside
+      this panel, so the Legend naturally stays below the upper-left box.
+    */
+    #left-panel {
       position: fixed;
-      top: 12px;
-      left: 12px;
-      z-index: 5;
-      max-width: 420px;
-      padding: 10px 12px;
-      border: 1px solid rgba(180, 210, 255, 0.20);
-      border-radius: 7px;
-      background: rgba(3, 7, 15, 0.72);
-      backdrop-filter: blur(5px);
+      top: 18px;
+      left: 18px;
+
+      z-index: 10;
+
+      width: min(560px, calc(100vw - 42px));
+
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+
       pointer-events: none;
     }
 
-    #title {
-      margin-bottom: 5px;
-      font-size: 15px;
-      font-weight: 700;
-      letter-spacing: 0.03em;
+    #hud {
+      position: relative;
+
+      width: 400px;
+      max-width: 100%;
+
+      box-sizing: border-box;
+
+      padding: 14px 16px 15px;
+
+      color: rgba(232, 242, 255, 0.92);
+
+      background: rgba(4, 10, 18, 0.62);
+
+      border: 1px solid rgba(140, 205, 255, 0.20);
+      border-radius: 8px;
+
+      box-shadow:
+        0 0 20px rgba(75, 165, 255, 0.10),
+        inset 0 0 20px rgba(105, 185, 255, 0.025);
+
+      font-family:
+        Georgia,
+        "Times New Roman",
+        serif;
+
+      pointer-events: none;
     }
 
-    #status,
+    /* ------------------------------------------------------------------------- */
+    /* LEGEND                                                                    */
+    /* ------------------------------------------------------------------------- */
+
+    #legend {
+      width: 400px;
+      max-width: 100%;
+
+      box-sizing: border-box;
+
+      padding: 14px 17px 16px;
+
+      color: rgba(232, 242, 255, 0.92);
+
+      background: rgba(4, 10, 18, 0.62);
+
+      border: 1px solid rgba(140, 205, 255, 0.20);
+      border-radius: 8px;
+
+      box-shadow:
+        0 0 20px rgba(75, 165, 255, 0.10),
+        inset 0 0 20px rgba(105, 185, 255, 0.025);
+
+      font-family:
+        Inter,
+        ui-sans-serif,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+
+      pointer-events: none;
+    }
+
+
+    .legend-title {
+      margin-bottom: 10px;
+
+      color: rgba(245, 250, 255, 0.98);
+
+      font-family:
+        Georgia,
+        "Times New Roman",
+        serif;
+
+      font-size: 23px;
+      font-weight: 700;
+      line-height: 1.1;
+
+      text-shadow:
+        0 0 10px rgba(125, 205, 255, 0.14);
+    }
+
+
+    .legend-content {
+      display: grid;
+
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 0.92fr);
+
+      column-gap: 0px;
+    }
+
+
+    .legend-column {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+
+    .legend-reference-column {
+      padding-left: 16px;
+
+      border-left: 1px solid rgba(145, 205, 255, 0.14);
+    }
+
+
+    .legend-entry {
+      display: flex;
+      align-items: center;
+
+      gap: 8px;
+
+      min-height: 22px;
+
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 1.25;
+
+      white-space: nowrap;
+    }
+
+
+    /*
+      Cluster-family dots and Sun dot.
+    */
+    .legend-dot {
+      display: inline-block;
+
+      width: 11px;
+      height: 11px;
+
+      flex: 0 0 11px;
+
+      border-radius: 50%;
+
+      box-shadow:
+        0 0 8px currentColor,
+        0 0 15px currentColor;
+    }
+
+
+    /* Cluster-family colours. */
+
+    .legend-entry.alpha-per {
+      color: rgb(255, 0, 255);
+    }
+
+    .legend-entry.cr-135 {
+      color: rgb(255, 140, 0);
+    }
+
+    .legend-entry.m6 {
+      color: rgb(0, 255, 255);
+    }
+
+    .legend-entry.gamma-vel {
+      color: rgb(220, 20, 60);
+    }
+
+    .legend-entry.other {
+      color: rgb(158, 158, 158);
+    }
+
+    .legend-entry.alpha-per .legend-dot {
+      background: rgb(255, 0, 255);
+    }
+
+    .legend-entry.cr-135 .legend-dot {
+      background: rgb(255, 140, 0);
+    }
+
+    .legend-entry.m6 .legend-dot {
+      background: rgb(0, 255, 255);
+    }
+
+    .legend-entry.gamma-vel .legend-dot {
+      background: rgb(220, 20, 60);
+    }
+
+    .legend-entry.other .legend-dot {
+      background: rgb(158, 158, 158);
+    }
+
+
+    /*
+      OB-star density field symbol.
+
+      This is a small blue cloud / diffuse emission patch, intended to
+      resemble the blue semi-transparent ray-marched density volume rather
+      than a point-like cluster.
+    */
+    .legend-entry.ob-stars {
+      color: rgb(125, 204, 255);
+    }
+
+    .legend-density-symbol {
+      display: inline-block;
+
+      width: 12px;
+      height: 12px;
+
+      flex: 0 0 12px;
+
+      box-sizing: border-box;
+
+      border: 1px solid rgba(215, 245, 255, 0.95);
+      border-radius: 1px;
+
+      background: linear-gradient(
+        135deg,
+        rgb(185, 235, 255) 0%,
+        rgb(80, 175, 255) 43%,
+        rgb(35, 95, 220) 100%
+      );
+
+      box-shadow:
+        0 0 5px rgba(115, 205, 255, 1.0),
+        0 0 12px rgba(55, 130, 255, 0.75),
+        0 0 20px rgba(42, 95, 230, 0.30);
+    }
+
+
+    /*
+      Sun marker: same family of circular symbol as cluster dots, but yellow
+      with a bright central highlight.
+    */
+    .legend-entry.sun {
+      color: rgb(255, 194, 31);
+    }
+
+    .legend-entry.sun .legend-dot {
+      background: rgb(255, 194, 31);
+
+      box-shadow:
+        0 0 6px rgba(255, 212, 60, 0.95),
+        0 0 13px rgba(255, 174, 20, 0.62);
+    }
+
+
+    /*
+      Gould's Belt model: an orange line corresponding to the 3-D orange
+      Line2 ellipse in the scene.
+    */
+    .legend-entry.gould-belt {
+      color: rgb(255, 140, 0);
+    }
+
+    .legend-line-symbol {
+      display: inline-block;
+
+      width: 28px;
+      height: 0;
+
+      flex: 0 0 28px;
+
+      border-top: 4px solid rgb(255, 140, 0);
+      border-radius: 99px;
+
+      box-shadow:
+        0 0 6px rgba(255, 140, 0, 0.92),
+        0 0 13px rgba(255, 100, 0, 0.48);
+    }
+
+    #title {
+      color: rgba(238, 247, 255, 0.98);
+
+      font-size: 27px;
+      font-weight: 700;
+      line-height: 1.10;
+
+      letter-spacing: 0.01em;
+
+      text-shadow:
+        0 0 10px rgba(125, 205, 255, 0.18);
+    }
+
+
+    #subtitle {
+      margin-top: 3px;
+
+      color: rgba(238, 247, 255, 0.98);
+
+      font-size: 23px;
+      font-weight: 500;
+      line-height: 1.25;
+    }
+
+
+    #status {
+      min-height: 0;
+    }
+
+
     #hint {
-      color: rgba(230, 240, 255, 0.75);
+      margin-top: 12px;
+    }
+
+
+    #acknowledgements {
+      margin-top: 15px;
+
+      padding-top: 5px;
+
+      border-top: 1px solid rgba(145, 205, 255, 0.14);
+    }
+
+
+    .hint-heading {
+      margin-bottom: 1px;
+
+      color: rgba(190, 202, 216, 0.80);
+
+      font-family:
+        Inter,
+        ui-sans-serif,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+
+      font-size: 13px;
+      font-weight: 450;
+
+      letter-spacing: 0.045em;
+      text-transform: uppercase;
+    }
+
+
+    .hint-line {
+      color: rgba(202, 221, 242, 0.76);
+
+      font-family:
+        Inter,
+        ui-sans-serif,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+
       font-size: 12px;
       line-height: 1.45;
     }
 
-    #hint {
-      margin-top: 5px;
-      color: rgba(190, 210, 235, 0.55);
-    }
 
-    .hint-heading {
-      margin-bottom: 2px;
+    .paper-title {
+      color: rgba(220, 234, 250, 0.88);
 
-      color: rgba(230, 240, 255, 0.85);
+      font-style: italic;
 
-      font-size: 12px;
-      font-weight: 700;
+      text-decoration: none;
+
+      pointer-events: auto;
+      cursor: pointer;
     }
 
     #error {
@@ -85,6 +423,8 @@
     }
 
     .lil-gui.root {
+      top: 18px !important;
+      right: 18px !important;
       --background-color: rgba(8, 14, 25, 0.92);
       --widget-color: #1b3851;
       --hover-color: #294f71;
@@ -342,23 +682,228 @@
       }
     }
 
+    @media (max-width: 700px) {
+      #left-panel {
+        top: 9px;
+        left: 9px;
+
+        width: min(430px, calc(100vw - 18px));
+
+        gap: 9px;
+      }
+
+      #hud {
+        width: 100%;
+
+        padding: 10px 12px 11px;
+      }
+
+      #legend {
+        width: 100%;
+
+        padding: 10px 12px 11px;
+      }
+
+      #title {
+        font-size: 22px;
+      }
+
+      #subtitle {
+        font-size: 17px;
+      }
+
+      #hint {
+        margin-top: 12px;
+      }
+
+      #acknowledgements {
+        margin-top: 10px;
+        padding-top: 9px;
+      }
+
+      .hint-heading {
+        font-size: 11px;
+      }
+
+      .hint-line {
+        font-size: 10px;
+        line-height: 1.35;
+      }
+
+      .legend-title {
+        font-size: 18px;
+      }
+
+      /*
+        On a narrow phone, stack the two Legend columns rather than making
+        individual labels too cramped.
+      */
+      .legend-content {
+        grid-template-columns: 1fr;
+        row-gap: 9px;
+      }
+
+      .legend-reference-column {
+        padding-top: 8px;
+        padding-left: 0;
+
+        border-top: 1px solid rgba(145, 205, 255, 0.14);
+        border-left: none;
+      }
+
+      .legend-column {
+        gap: 3px;
+      }
+
+      .legend-entry {
+        min-height: 20px;
+        gap: 8px;
+
+        font-size: 12px;
+      }
+
+      .legend-dot {
+        width: 9px;
+        height: 9px;
+
+        flex-basis: 9px;
+      }
+
+      .legend-density-symbol {
+        width: 10px;
+        height: 10px;
+
+        flex-basis: 10px;
+      }
+
+      .legend-line-symbol {
+        width: 23px;
+
+        flex-basis: 23px;
+
+        border-top-width: 3px;
+      }
+
+      /*
+        GUI returns to upper-right. It may overlay some left-side material
+        only on exceptionally narrow displays, where horizontal room is
+        inherently limited.
+      */
+      .lil-gui.root {
+        top: 9px !important;
+        right: 9px !important;
+
+        --width: min(300px, calc(100vw - 18px));
+      }
+
+      #time-control {
+        left: 8px;
+        right: 8px;
+        bottom: calc(8px + env(safe-area-inset-bottom));
+      }
+
+      #time-readout {
+        bottom: calc(42px + env(safe-area-inset-bottom));
+        font-size: 11px;
+      }
+    }
+
   </style>
 </head>
 
 <body>
   <div id="app"></div>
 
-  <div id="hud">
-    <div id="title">
-      &quot;Requiem for a belt&quot; interactive visualization tool
+  <div id="left-panel">
+    <div id="hud">
+      <div id="title">Requiem for a belt</div>
+
+      <div id="subtitle">
+        Interactive visualization tool
+      </div>
+
+      <div id="status" aria-live="polite"></div>
+
+      <div id="hint">
+        <div class="hint-heading">Instructions:</div>
+
+        <div class="hint-line">
+          Left click and drag: rotate · Mouse wheel: zoom ·
+          Right click and drag: pan · Press [R] key: reset camera view ·
+          Press [T] key: go back to the present · Drag slider handle:
+          move across time
+        </div>
+      </div>
+
+      <div id="acknowledgements">
+        <div class="hint-heading">Acknowledgements:</div>
+
+        <div class="hint-line">
+          This tool was created by Michelangelo Pantaleoni with the use of
+          research-based AI tools for the paper
+          <a
+            class="paper-title"
+            href="https://ui.adsabs.harvard.edu/abs/2026arXiv260413225P/abstract"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            “Requiem for a belt: A spatial and kinematical reinterpretation
+            of Gould's Belt in light of Gaia”
+          </a>.
+        </div>
+      </div>
     </div>
 
-    <div id="status" aria-live="polite"></div>
+    <div id="legend" aria-label="Legend">
+      <div class="legend-title">Legend</div>
 
-    <div id="hint">
-      <div class="hint-heading">Instructions:</div>
+      <div class="legend-content">
+        <!-- Left column: cluster families. -->
+        <div class="legend-column legend-cluster-column">
+          <div class="legend-entry alpha-per">
+            <span class="legend-dot"></span>
+            <span>αPer cluster family</span>
+          </div>
 
-      Left drag: orbit · Wheel: zoom · Right drag: pan
+          <div class="legend-entry cr-135">
+            <span class="legend-dot"></span>
+            <span>Cr135 cluster family</span>
+          </div>
+
+          <div class="legend-entry m6">
+            <span class="legend-dot"></span>
+            <span>M6 cluster family</span>
+          </div>
+
+          <div class="legend-entry gamma-vel">
+            <span class="legend-dot"></span>
+            <span>γVel cluster family</span>
+          </div>
+
+          <div class="legend-entry other">
+            <span class="legend-dot"></span>
+            <span>Other young clusters</span>
+          </div>
+        </div>
+
+        <!-- Right column: other visual layers. -->
+        <div class="legend-column legend-reference-column">
+          <div class="legend-entry ob-stars">
+            <span class="legend-density-symbol"></span>
+            <span>OB stars</span>
+          </div>
+
+          <div class="legend-entry sun">
+            <span class="legend-dot"></span>
+            <span>Sun</span>
+          </div>
+
+          <div class="legend-entry gould-belt">
+            <span class="legend-line-symbol"></span>
+            <span>Gould's Belt model</span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 

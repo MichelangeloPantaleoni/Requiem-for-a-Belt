@@ -22,6 +22,14 @@ const MAX_STEPS = 512;
 */
 const CLUSTER_BIRTH_FADE_MYR = 5.0;
 
+/*
+  All coordinate/reference objects are rendered after cluster spheres.
+
+  Their materials still use depth testing, so this does not force them
+  visually in front. It merely ensures they test against the depth
+  written by the clusters.
+*/
+const REFERENCE_RENDER_ORDER = 20;
 
 /*
   The present-day OB density field and Gould Belt model are gradually
@@ -54,6 +62,68 @@ const GOULD_BELT_FADE_MYR = 3.0;
 */
 const Z_AXIS_FULL_OPACITY_ANGLE_DEG = 15.0;
 const Z_AXIS_FADE_END_DEG = 50.0;
+
+/*
+  Solar-circle guide.
+
+  The local LSR frame moves around the Galaxy at an assumed circular
+  speed of 236 km/s and Galactocentric radius of 8.122 kpc.
+
+  This is a geometric orientation aid, not an independently integrated
+  orbit model.
+*/
+const SOLAR_CIRCLE_RADIUS_PC = 8122.0;
+
+const SOLAR_CIRCLE_SPEED_KM_S = 236.0;
+
+/*
+  1 km/s = approximately 1.022712165 pc/Myr.
+*/
+const KM_S_TO_PC_MYR = 1.022712165;
+
+/*
+  Appearance.
+*/
+const SOLAR_CIRCLE_OPACITY = 0.75;
+
+const SOLAR_CIRCLE_LINE_WIDTH_PX = 2.0;
+
+const SOLAR_CIRCLE_TICK_INTERVAL_DEG = 10.0;
+
+const SOLAR_CIRCLE_TICK_LENGTH_PC = 85.0;
+
+const GALACTIC_CENTRE_GLOW_DIAMETER_PC = 1000.0;
+
+/*
+  Solar Galactocentric-radius reference line and label controls.
+*/
+const GALACTIC_RADIUS_LINE_NOMINAL_OPACITY = 0.75;
+
+const GALACTIC_RADIUS_LABEL_NOMINAL_OPACITY = 1.0;
+
+/*
+  Text raster resolution and physical displayed size.
+
+  Increasing FONT_SIZE_PX improves texture sharpness.
+  Increasing LABEL_HEIGHT_PC makes the label physically larger.
+*/
+const GALACTIC_RADIUS_LABEL_FONT_SIZE_PX = 130;
+const GALACTIC_RADIUS_LABEL_HEIGHT_PC = 140.0;
+
+/*
+  Separation between the radius line and the nearest edge of the
+  "flag" label, in physical pc.
+*/
+const GALACTIC_RADIUS_LABEL_LINE_SEPARATION_PC = 70.0;
+
+/*
+  Distance-based attenuation relative to the centre of the LSR square.
+
+  At or below 2 kpc: fully hidden.
+  At or above 3 kpc: fully visible.
+*/
+const GALACTIC_RADIUS_REFERENCE_FADE_START_PC = 2700.0;
+const GALACTIC_RADIUS_REFERENCE_FADE_END_PC = 4000.0;
 
 /*
   Shift the rendered 3-D scene slightly upward in the browser viewport.
@@ -433,6 +503,118 @@ void main() {
 }
 `;
 
+/* -------------------------------------------------------------------------- */
+/* GALACTIC-CENTRE GLOW SHADERS                                               */
+/* -------------------------------------------------------------------------- */
+
+const GALACTIC_CENTRE_VERTEX_SHADER = /* glsl */ `
+precision highp float;
+
+uniform float uDiameterPc;
+uniform float uProjectionScale;
+uniform float uMaxPointSize;
+
+void main() {
+    vec4 mvPosition = modelViewMatrix * vec4(
+        position,
+        1.0
+    );
+
+    float depth = max(
+        -mvPosition.z,
+        0.001
+    );
+
+    float pointSize =
+        uDiameterPc
+        * uProjectionScale
+        / depth;
+
+    gl_PointSize = clamp(
+        pointSize,
+        3.0,
+        uMaxPointSize
+    );
+
+    gl_Position = projectionMatrix
+        * mvPosition;
+}
+`;
+
+
+const GALACTIC_CENTRE_FRAGMENT_SHADER = /* glsl */ `
+precision highp float;
+
+void main() {
+    vec2 localPoint =
+        gl_PointCoord * 2.0 - 1.0;
+
+    float radiusSquared = dot(
+        localPoint,
+        localPoint
+    );
+
+    if (radiusSquared > 1.0) {
+        discard;
+    }
+
+    /*
+      Bright compact red core.
+    */
+    float core = exp(
+        -50.0 * radiusSquared
+    );
+
+    /*
+      Broader diffuse red halo.
+    */
+    float halo = exp(
+        -2.35 * radiusSquared
+    );
+
+    float edge =
+        1.0 - smoothstep(
+            0.80,
+            1.0,
+            sqrt(radiusSquared)
+        );
+
+    float alpha =
+        (
+            0.95 * core
+            + 0.24 * halo
+        )
+        * edge;
+
+        /*
+          Crimson halo with an intense warm-white central core.
+        */
+        vec3 crimsonColour = vec3(
+            0.86,
+            0.03,
+            0.18
+        );
+
+        vec3 coreColour = vec3(
+            1.00,
+            0.72,
+            0.78
+        );
+
+        vec3 colour =
+            crimsonColour
+            * 0.72
+            * halo
+            + coreColour
+            * 1.0
+            * core;
+
+    gl_FragColor = vec4(
+        colour,
+        alpha
+    );
+}
+`;
 
 /* -------------------------------------------------------------------------- */
 /* INITIALIZATION                                                             */
@@ -458,6 +640,14 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x02050a, 1);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
+/*
+  Keep Three.js render-list ordering deterministic.
+
+  This is important because coordinate/reference layers render after
+  clusters, while still using depth testing for real 3-D occlusion.
+*/
+renderer.sortObjects = true;
+
 app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -475,6 +665,11 @@ let outerOutline;
   Galactic-plane coordinate grid at z = 0.
 */
 let galacticPlaneGrid = null;
+
+/*
+  Time-dependent Solar-circle guide in the Galactic plane.
+*/
+let solarCircleLayer = null;
 
 /*
   The 3-D Gould Belt ellipse and its material.
@@ -506,7 +701,22 @@ let params;
 
 let renderPending = false;
 
+/*
+  Stores the current smooth camera-reset animation, if any.
+*/
+let cameraResetAnimationFrame = null;
+
+/*
+  Stores the smooth return-to-present-time animation, if active.
+*/
+let timeReturnAnimationFrame = null;
+
 window.addEventListener('resize', onResize);
+
+window.addEventListener(
+    'keydown',
+    onKeyDown
+);
 
 if (!renderer.capabilities.isWebGL2) {
     reportError(
@@ -663,12 +873,12 @@ async function initialise() {
     showDensity: true,
 
     lower: finiteNumber(defaults.lower, 0.425),
-    upper: finiteNumber(defaults.upper, 0.820),
-    softness: finiteNumber(defaults.softness, 0.25),
+    upper: 0.8,
+    softness: 0.7,
 
     opacity: finiteNumber(defaults.opacity, 1.00),
     opticalDensity: finiteNumber(defaults.opticalDensity, 50.0),
-    gamma: finiteNumber(defaults.gamma, 2.0),
+    gamma: 1.5,
 
     steps: Math.round(finiteNumber(defaults.steps, 100)),
 
@@ -691,6 +901,11 @@ async function initialise() {
       Opacity of the internal x/y grid lines.
     */
     gridLineOpacity: 0.30,
+
+    /*
+      Solar-circle Galactic-orientation guide.
+    */
+    showSolarCircle: true,
 
     /*
       ----------------------------------------------------------------
@@ -765,7 +980,7 @@ async function initialise() {
       a visual marker diameter used to keep the Sun visible in a pc-scale
       Galactic visualization.
     */
-    sunDiameterPc: 85.0,
+    sunDiameterPc: 100.0,
 
     resetView: () => {},
 };
@@ -827,6 +1042,121 @@ async function initialise() {
     controls.maxDistance = maxExtent * 15.0;
 
     controls.update();
+
+    /*
+      Restore the original camera position and orbit target.
+    */
+    params.resetView = () => {
+        /*
+          Prevent multiple overlapping reset animations.
+        */
+        if (cameraResetAnimationFrame !== null) {
+            cancelAnimationFrame(
+                cameraResetAnimationFrame
+            );
+
+            cameraResetAnimationFrame = null;
+        }
+
+        /*
+          Two seconds, as requested.
+        */
+        const durationMs = 2000.0;
+
+        const startingPosition =
+            camera.position.clone();
+
+        const startingTarget =
+            controls.target.clone();
+
+        const endingPosition =
+            initialCameraPosition.clone();
+
+        const endingTarget =
+            centre.clone();
+
+        const startTime = performance.now();
+
+        /*
+          Temporarily disable manual camera interaction while the reset
+          animation is running.
+        */
+        controls.enabled = false;
+
+        function smoothStep(value) {
+            /*
+              Smooth cubic easing:
+
+                  0 -> 0
+                  1 -> 1
+
+              with zero velocity at both ends.
+            */
+            return value * value * (
+                3.0 - 2.0 * value
+            );
+        }
+
+        function animateReset(currentTime) {
+            const rawProgress = THREE.MathUtils.clamp(
+                (currentTime - startTime) / durationMs,
+                0.0,
+                1.0
+            );
+
+            const easedProgress = smoothStep(
+                rawProgress
+            );
+
+            camera.position.lerpVectors(
+                startingPosition,
+                endingPosition,
+                easedProgress
+            );
+
+            controls.target.lerpVectors(
+                startingTarget,
+                endingTarget,
+                easedProgress
+            );
+
+            controls.update();
+
+            requestRender();
+
+            if (rawProgress < 1.0) {
+                cameraResetAnimationFrame =
+                    requestAnimationFrame(
+                        animateReset
+                    );
+            } else {
+                /*
+                  Ensure exact final values, avoiding tiny accumulated
+                  interpolation differences.
+                */
+                camera.position.copy(
+                    endingPosition
+                );
+
+                controls.target.copy(
+                    endingTarget
+                );
+
+                controls.enabled = true;
+
+                controls.update();
+
+                cameraResetAnimationFrame = null;
+
+                requestRender();
+            }
+        }
+
+        cameraResetAnimationFrame =
+            requestAnimationFrame(
+                animateReset
+            );
+    };
 
     /*
       Shader uniforms.
@@ -899,7 +1229,8 @@ async function initialise() {
     outerOutline.position.copy(centre);
     outerOutline.scale.copy(extent);
 
-    outerOutline.renderOrder = 2;
+    outerOutline.renderOrder =
+        REFERENCE_RENDER_ORDER;
 
     scene.add(outerOutline);
 
@@ -912,6 +1243,24 @@ async function initialise() {
     galacticPlaneGrid = createGalacticPlaneGrid();
 
     /*
+      Solar-circle guide. It is updated every time the trajectory slider
+      selects a new Myr epoch.
+    */
+    solarCircleLayer = createSolarCircleLayer();
+
+    /*
+      Make the entire LSR-coordinate system and the Galactic-reference
+      system render after clusters while retaining normal depth testing.
+    */
+    setReferenceGroupRenderOrder(
+        galacticPlaneGrid.root
+    );
+
+    setReferenceGroupRenderOrder(
+        solarCircleLayer.root
+    );
+
+    /*
       Create the 3-D Gould Belt ellipse.
 
       It is added directly to `scene`, rather than to `volumeMesh`,
@@ -920,7 +1269,8 @@ async function initialise() {
     */
     gouldBeltLine = createGouldBeltModel();
 
-    gouldBeltLine.renderOrder = 5;
+    gouldBeltLine.renderOrder =
+        REFERENCE_RENDER_ORDER;
 
     scene.add(gouldBeltLine);
 
@@ -1028,7 +1378,7 @@ function createGUI() {
 
     watched(
         transferFolder
-            .add(params, 'softness', 0.001, 0.50, 0.001)
+            .add(params, 'softness', 0.001, 1.0, 0.001)
             .name('Threshold softness')
     );
 
@@ -1140,33 +1490,7 @@ function createGUI() {
     );
 
     /* ====================================================================== */
-    /* 3. SUN                                                                 */
-    /* ====================================================================== */
-
-    const sunFolder = gui.addFolder(
-        'Sun'
-    );
-
-    watched(
-        sunFolder
-            .add(params, 'showSun')
-            .name('Visible Sun')
-    );
-
-    watched(
-        sunFolder
-            .add(
-                params,
-                'sunDiameterPc',
-                1.0,
-                300.0,
-                1.0
-            )
-            .name('Glow diameter [pc]')
-    );
-
-    /* ====================================================================== */
-    /* 4. GOULD BELT MODEL                                                    */
+    /* 3. GOULD BELT MODEL                                                    */
     /* ====================================================================== */
 
     const gouldFolder = gui.addFolder(
@@ -1205,11 +1529,11 @@ function createGUI() {
 
 
     /* ====================================================================== */
-    /* 5. GRID AND COORDINATES                                                */
+    /* 4. COORDINATES AND OTHEWR REFERENCES                                               */
     /* ====================================================================== */
 
     const gridFolder = gui.addFolder(
-        'Grid and coordinates'
+        'Coordinates and other references'
     );
 
     watched(
@@ -1221,7 +1545,7 @@ function createGUI() {
     watched(
         gridFolder
             .add(params, 'showGalacticPlaneGrid')
-            .name('Show Galactic-plane grid')
+            .name('Show LSR coordinates')
     );
 
     watched(
@@ -1248,13 +1572,40 @@ function createGUI() {
             .name('Internal grid lines')
     );
 
+    watched(
+        gridFolder
+            .add(params, 'showSolarCircle')
+            .name('Show Galactic references')
+    );
+
+    watched(
+        gridFolder
+            .add(params, 'showSun')
+            .name('Show Sun')
+    );
+
+    watched(
+        gridFolder
+            .add(
+                params,
+                'sunDiameterPc',
+                1.0,
+                300.0,
+                1.0
+            )
+            .name('Sun glow diameter [pc]')
+    );
+
+    gridFolder
+        .add(params, 'resetView')
+        .name('Reset camera view [R]');
+
 
     /*
       Keep every top-level scientific menu collapsed at startup.
     */
     densityFolder.close();
     clusterFolder.close();
-    sunFolder.close();
     gouldFolder.close();
     gridFolder.close();
 }
@@ -1341,6 +1692,11 @@ function syncUniforms() {
         clusterLayer.timesMyr[clusterFrameIndex];
 
     /*
+      Rotate the local Solar-circle guide to the selected LSR epoch.
+    */
+    updateSolarCircle(selectedTimeMyr);
+
+    /*
       Smoothly fade present-day-only objects as the user moves away from
       t = 0 Myr.
 
@@ -1383,7 +1739,7 @@ function syncUniforms() {
     );
 
     const upper = THREE.MathUtils.clamp(
-        finiteNumber(params.upper, 1.0),
+        finiteNumber(params.upper, 0.8),
         lower + 0.005,
         1.0
     );
@@ -1401,9 +1757,9 @@ function syncUniforms() {
     uniforms.uUpper.value = upper;
 
     uniforms.uSoftness.value = THREE.MathUtils.clamp(
-        finiteNumber(params.softness, 0.035),
+        finiteNumber(params.softness, 1.0),
         0.001,
-        0.5
+        1.0
     );
 
     const nominalDensityOpacity = THREE.MathUtils.clamp(
@@ -1426,7 +1782,7 @@ function syncUniforms() {
     );
 
     uniforms.uGamma.value = THREE.MathUtils.clamp(
-        finiteNumber(params.gamma, 0.8),
+        finiteNumber(params.gamma, 1.5),
         0.05,
         5.0
     );
@@ -1457,7 +1813,7 @@ function syncUniforms() {
 
     sunLayer.material.uniforms.uDiameterPc.value =
         THREE.MathUtils.clamp(
-            finiteNumber(params.sunDiameterPc, 85.0),
+            finiteNumber(params.sunDiameterPc, 100.0),
             1.0,
             300.0
         );
@@ -1548,6 +1904,12 @@ function syncUniforms() {
         */
         updateGalacticPlaneGridLabels();
     }
+
+    /*
+      Solar circle is independent from the square coordinate grid.
+    */
+    updateSolarCircleStyle();
+
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1743,6 +2105,26 @@ function createGouldBeltModel() {
     return line;
 }
 
+function setReferenceGroupRenderOrder(root) {
+    if (!root) {
+        return;
+    }
+
+    /*
+      Group renderOrder is inherited by descendants during Three.js
+      render-list construction.
+
+      Nested groups are included because the z-axis has nested tick and
+      label groups.
+    */
+    root.traverse((object) => {
+        if (object.isGroup) {
+            object.renderOrder =
+                REFERENCE_RENDER_ORDER;
+        }
+    });
+}
+
 /* -------------------------------------------------------------------------- */
 /* EXTERNAL TIME SLIDER                                                       */
 /* -------------------------------------------------------------------------- */
@@ -1919,6 +2301,20 @@ function initialiseExternalTimeSlider() {
 
         requestRender();
     });
+
+    /*
+      Avoid leaving a visible keyboard-focus ring around the timeline after
+      a mouse/touch drag. Keyboard shortcuts still work even without this,
+      but it makes the interaction feel cleaner.
+    */
+    timeSlider.addEventListener(
+        'pointerup',
+        () => {
+            if (document.activeElement === timeSlider) {
+                timeSlider.blur();
+            }
+        }
+    );
 
     timeSliderInitialised = true;
 
@@ -3686,7 +4082,6 @@ function makeGridTextSprite(
         fontFamily = 'Georgia, Times New Roman, serif',
         colour = 'rgba(245, 250, 255, 1.0)',
         padding = 18,
-        scaleX = 100,
         scaleY = 34,
     } = options;
 
@@ -3748,7 +4143,7 @@ function makeGridTextSprite(
         transparent: true,
         opacity: 1.0,
 
-        depthTest: false,
+        depthTest: true,
         depthWrite: false,
 
         toneMapped: false,
@@ -3791,6 +4186,119 @@ function formatGridCoordinate(value) {
     return String(rounded);
 }
 
+function makeFlatTextLabel(
+    text,
+    options = {}
+) {
+    const {
+        fontSize = 130,
+        fontFamily = 'Georgia, Times New Roman, serif',
+        colour = 'rgba(235, 245, 255, 1.0)',
+        padding = 18,
+
+        /*
+          Physical height in pc. The width follows naturally from the
+          rendered canvas aspect ratio.
+        */
+        heightPc = 105,
+    } = options;
+
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    const deviceScale = 4;
+
+    context.font = `${fontSize}px ${fontFamily}`;
+
+    const textWidth = Math.ceil(
+        context.measureText(text).width
+    );
+
+    const logicalWidth =
+        textWidth + 2 * padding;
+
+    const logicalHeight =
+        fontSize + 2 * padding;
+
+    canvas.width = Math.ceil(
+        logicalWidth * deviceScale
+    );
+
+    canvas.height = Math.ceil(
+        logicalHeight * deviceScale
+    );
+
+    context.scale(
+        deviceScale,
+        deviceScale
+    );
+
+    context.font = `${fontSize}px ${fontFamily}`;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+
+    context.shadowColor = 'rgba(0, 0, 0, 0.90)';
+    context.shadowBlur = 7;
+    context.shadowOffsetX = 1;
+    context.shadowOffsetY = 1;
+
+    context.fillStyle = colour;
+
+    context.fillText(
+        text,
+        logicalWidth * 0.5,
+        logicalHeight * 0.5
+    );
+
+    const texture = new THREE.CanvasTexture(
+        canvas
+    );
+
+    texture.colorSpace = THREE.SRGBColorSpace;
+
+    texture.anisotropy = Math.min(
+        renderer.capabilities.getMaxAnisotropy(),
+        8
+    );
+
+    texture.needsUpdate = true;
+
+    const aspectRatio =
+        canvas.width / canvas.height;
+
+    const geometry = new THREE.PlaneGeometry(
+        heightPc * aspectRatio,
+        heightPc
+    );
+
+    const material = new THREE.MeshBasicMaterial({
+        map: texture,
+
+        transparent: true,
+        opacity: 1.0,
+
+        side: THREE.DoubleSide,
+
+        depthTest: true,
+        depthWrite: false,
+
+        toneMapped: false,
+    });
+
+    const mesh = new THREE.Mesh(
+        geometry,
+        material
+    );
+
+    mesh.renderOrder = 6;
+
+    return {
+        mesh,
+        geometry,
+        material,
+        texture,
+    };
+}
 
 function createGalacticPlaneGrid() {
     const root = new THREE.Group();
@@ -4152,7 +4660,7 @@ function createGalacticPlaneGrid() {
             formatGridCoordinate(xValue),
             {
                 fontSize: 90,
-                scaleY: 38,
+                scaleY: 50,
             }
         );
 
@@ -4169,7 +4677,7 @@ function createGalacticPlaneGrid() {
             formatGridCoordinate(yValue),
             {
                 fontSize: 90,
-                scaleY: 38,
+                scaleY: 50,
             }
         );
 
@@ -4232,6 +4740,30 @@ function createGalacticPlaneGrid() {
         root.add(label);
     }
 
+    /*
+      Flat label below the negative-y side of the LSR coordinate square.
+    */
+    const lsrFrameLabel = makeFlatTextLabel(
+        'LSR frame',
+        {
+            fontSize: 130,
+            heightPc: 205,
+
+            colour: 'rgba(235, 245, 255, 1.0)',
+        }
+    );
+
+    /*
+      Keep this farther below the square than the x_LSR axis label.
+    */
+    lsrFrameLabel.mesh.position.set(
+        0.5 * (xMin + xMax),
+        yMin - 260.0,
+        zPlane - 2.0
+    );
+
+    root.add(lsrFrameLabel.mesh);
+
     root.visible = false;
 
     scene.add(root);
@@ -4292,6 +4824,14 @@ function createGalacticPlaneGrid() {
 
         zPlane,
         labelZ,
+
+        planeCentre: new THREE.Vector3(
+            0.5 * (xMin + xMax),
+            0.5 * (yMin + yMax),
+            zPlane
+        ),
+
+        lsrFrameLabel,
 
         gridMaterial,
         tickMaterial,
@@ -4376,6 +4916,7 @@ function updateGalacticPlaneGridStyle() {
       additional camera-elevation fade.
     */
     updateGalacticZAxisStyle();
+    updateLsrFrameLabelStyle();
 
 }
 
@@ -4414,7 +4955,7 @@ function updateGalacticPlaneGridLabels(
                     formatGridCoordinate(entry.value),
                     {
                         fontSize: 90,
-                        scaleY: 38,
+                        scaleY: 50,
                     }
                 ),
             ];
@@ -4447,7 +4988,7 @@ function updateGalacticPlaneGridLabels(
                     formatGridCoordinate(entry.value),
                     {
                         fontSize: 90,
-                        scaleY: 38,
+                        scaleY: 50,
                     }
                 ),
             ];
@@ -4516,6 +5057,85 @@ function updateGalacticPlaneGridLabels(
         grid.labelZ
     );
 
+}
+
+function smoothVisibilityFactor(
+    value,
+    invisibleAt,
+    fullyVisibleAt
+) {
+    const normalized = THREE.MathUtils.clamp(
+        (value - invisibleAt)
+        / Math.max(
+            fullyVisibleAt - invisibleAt,
+            1.0e-8
+        ),
+        0.0,
+        1.0
+    );
+
+    return normalized
+        * normalized
+        * (
+            3.0
+            - 2.0 * normalized
+        );
+}
+
+
+function cameraDistanceToLsrPlaneCentre() {
+    if (!camera || !galacticPlaneGrid) {
+        return 0.0;
+    }
+
+    return camera.position.distanceTo(
+        galacticPlaneGrid.planeCentre
+    );
+}
+
+
+function updateLsrFrameLabelStyle(
+    grid = galacticPlaneGrid
+) {
+    if (!grid?.lsrFrameLabel || !camera) {
+        return;
+    }
+
+    const distancePc =
+        cameraDistanceToLsrPlaneCentre();
+
+    const elevationDeg =
+        cameraElevationAboveGalacticPlaneDeg();
+
+    /*
+      Invisible below 1.2 kpc; fully visible at >= 2.0 kpc.
+    */
+    const distanceFactor =
+        smoothVisibilityFactor(
+            distancePc,
+            3000.0,
+            4500.0
+        );
+
+    /*
+      Invisible below 30 degrees inclination; fully visible at >= 45°.
+    */
+    const inclinationFactor =
+        smoothVisibilityFactor(
+            elevationDeg,
+            10.0,
+            25.0
+        );
+
+    const finalOpacity =
+        distanceFactor
+        * inclinationFactor;
+
+    grid.lsrFrameLabel.material.opacity =
+        finalOpacity;
+
+    grid.lsrFrameLabel.mesh.visible =
+        finalOpacity > 0.001;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -4932,7 +5552,7 @@ function createGalacticZAxis(options) {
             formatGridCoordinate(zLsr),
             {
                 fontSize: 62,
-                scaleY: 38,
+                scaleY: 50,
             }
         );
 
@@ -5114,6 +5734,948 @@ function updateGalacticZAxisStyle(
         finalOpacity;
 }
 
+/* -------------------------------------------------------------------------- */
+/* SOLAR CIRCLE                                                               */
+/* -------------------------------------------------------------------------- */
+
+function solarCircleAngularSpeedRadPerMyr() {
+    /*
+      Circular speed in pc/Myr.
+    */
+    const circularSpeedPcPerMyr =
+        SOLAR_CIRCLE_SPEED_KM_S
+        * KM_S_TO_PC_MYR;
+
+    /*
+      omega = V / R.
+    */
+    return (
+        circularSpeedPcPerMyr
+        / SOLAR_CIRCLE_RADIUS_PC
+    );
+}
+
+
+function solarCircleCentreAtTime(timeMyr) {
+    /*
+      This reproduces the convention used in your Python script:
+
+          gc_vec = [cos(omega * t), -sin(omega * t)]
+
+      The local LSR volume remains at the origin. The apparent Galactic
+      centre rotates around it as time changes.
+    */
+    const angularPosition =
+        solarCircleAngularSpeedRadPerMyr()
+        * timeMyr;
+
+    return new THREE.Vector2(
+        SOLAR_CIRCLE_RADIUS_PC
+        * Math.cos(angularPosition),
+
+        -SOLAR_CIRCLE_RADIUS_PC
+        * Math.sin(angularPosition)
+    );
+}
+
+
+function createSolarCircleLayer() {
+    /*
+      Solar circle, Galactic-centre marker, and Galactic-centre label
+      all lie on the same local LSR plane.
+    */
+    const zPlane = -20.0;
+
+    const numberOfCircleSegments = 360;
+
+    const root = new THREE.Group();
+
+    root.name = 'Solar circle and Galactic centre guide';
+
+
+    /*
+      ----------------------------------------------------------------
+      Solar circle
+      ----------------------------------------------------------------
+    */
+
+    const circleGeometry = new LineGeometry();
+
+    circleGeometry.setPositions(
+        new Float32Array([
+            0, 0, zPlane,
+            0, 0, zPlane,
+        ])
+    );
+
+    const circleMaterial = new LineMaterial({
+        color: 0xa9b2ba,
+
+        linewidth: SOLAR_CIRCLE_LINE_WIDTH_PX,
+
+        transparent: true,
+        opacity: SOLAR_CIRCLE_OPACITY,
+
+        depthTest: true,
+        depthWrite: false,
+
+        worldUnits: false,
+        toneMapped: false,
+    });
+
+    circleMaterial.resolution.set(
+        window.innerWidth,
+        window.innerHeight
+    );
+
+    const circleLine = new Line2(
+        circleGeometry,
+        circleMaterial
+    );
+
+    circleLine.name = 'Solar circle';
+
+    circleLine.renderOrder = 1;
+    circleLine.frustumCulled = false;
+
+    root.add(circleLine);
+
+
+    /*
+      ----------------------------------------------------------------
+      Inward Solar-circle ticks
+      ----------------------------------------------------------------
+    */
+
+    const tickGeometry = new THREE.BufferGeometry();
+
+    tickGeometry.setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute(
+            new Float32Array(0),
+            3
+        )
+    );
+
+    const tickMaterial = new THREE.LineBasicMaterial({
+        color: 0xa9b2ba,
+
+        transparent: true,
+        opacity: SOLAR_CIRCLE_OPACITY,
+
+        depthTest: true,
+        depthWrite: false,
+
+        toneMapped: false,
+    });
+
+    const tickLines = new THREE.LineSegments(
+        tickGeometry,
+        tickMaterial
+    );
+
+    tickLines.name = 'Solar circle inward ticks';
+
+    tickLines.renderOrder = 1;
+    tickLines.frustumCulled = false;
+
+    root.add(tickLines);
+
+    /*
+      ----------------------------------------------------------------
+      Galactic-centre radial reference line
+      ----------------------------------------------------------------
+
+      This connects the local LSR origin to the Galactic centre.
+    */
+    const galacticRadiusGeometry = new LineGeometry();
+
+    galacticRadiusGeometry.setPositions(
+        new Float32Array([
+            0.0, 0.0, zPlane,
+            0.0, 0.0, zPlane,
+        ])
+    );
+
+    const galacticRadiusMaterial = new LineMaterial({
+        color: 0xb9c3cd,
+
+        linewidth: 1.0,
+
+        transparent: true,
+        opacity: 0.0,
+
+        depthTest: true,
+        depthWrite: false,
+
+        worldUnits: false,
+        toneMapped: false,
+    });
+
+    galacticRadiusMaterial.resolution.set(
+        window.innerWidth,
+        window.innerHeight
+    );
+
+    const galacticRadiusLine = new Line2(
+        galacticRadiusGeometry,
+        galacticRadiusMaterial
+    );
+
+    galacticRadiusLine.name =
+        'Solar Galactocentric radius';
+
+    galacticRadiusLine.renderOrder = 1;
+    galacticRadiusLine.frustumCulled = false;
+
+    root.add(galacticRadiusLine);
+
+
+    /*
+      Same font-size and world scale as the Galactic-center label.
+    */
+    /*
+      A real flat text plane rather than a Sprite.
+
+      Unlike a billboard Sprite, this can act as a flag whose base stays
+      parallel to the Solar Galactocentric-radius line while rotating to
+      face the camera as much as possible.
+    */
+    const galacticRadiusLabel = makeFlatTextLabel(
+        'Galactocentric radius = 8.12 kpc',
+        {
+            fontSize: GALACTIC_RADIUS_LABEL_FONT_SIZE_PX,
+
+            heightPc: GALACTIC_RADIUS_LABEL_HEIGHT_PC,
+
+            colour: 'rgba(220, 230, 240, 0.95)',
+        }
+    );
+
+    galacticRadiusLabel.material.opacity = 0.0;
+
+    galacticRadiusLabel.mesh.renderOrder =
+        REFERENCE_RENDER_ORDER;
+
+    root.add(galacticRadiusLabel.mesh);
+
+    /*
+      ----------------------------------------------------------------
+      Moving Galactic-centre glow marker
+      ----------------------------------------------------------------
+    */
+
+    const galacticCentreGeometry =
+        new THREE.BufferGeometry();
+
+    const galacticCentrePositionAttribute =
+        new THREE.BufferAttribute(
+            new Float32Array([
+                0.0,
+                0.0,
+                zPlane,
+            ]),
+            3
+        );
+
+    galacticCentrePositionAttribute.setUsage(
+        THREE.DynamicDrawUsage
+    );
+
+    galacticCentreGeometry.setAttribute(
+        'position',
+        galacticCentrePositionAttribute
+    );
+
+    const gl = renderer.getContext();
+
+    const pointSizeRange = gl.getParameter(
+        gl.ALIASED_POINT_SIZE_RANGE
+    );
+
+    const galacticCentreMaterial =
+        new THREE.ShaderMaterial({
+            uniforms: {
+                uDiameterPc: {
+                    value:
+                        GALACTIC_CENTRE_GLOW_DIAMETER_PC,
+                },
+
+                uProjectionScale: {
+                    value: 1.0,
+                },
+
+                uMaxPointSize: {
+                    value: Number(
+                        pointSizeRange[1]
+                    ),
+                },
+            },
+
+            vertexShader:
+                GALACTIC_CENTRE_VERTEX_SHADER,
+
+            fragmentShader:
+                GALACTIC_CENTRE_FRAGMENT_SHADER,
+
+            transparent: true,
+
+            depthTest: true,
+            depthWrite: false,
+
+            blending: THREE.AdditiveBlending,
+
+            toneMapped: false,
+        });
+
+    const galacticCentrePoints = new THREE.Points(
+        galacticCentreGeometry,
+        galacticCentreMaterial
+    );
+
+    galacticCentrePoints.name = 'Galactic center';
+
+    galacticCentrePoints.frustumCulled = false;
+    galacticCentrePoints.renderOrder = 2;
+
+    root.add(galacticCentrePoints);
+
+
+    /*
+      ----------------------------------------------------------------
+      Galactic-centre label
+      ----------------------------------------------------------------
+
+      Canvas sprite text is used, as for the grid labels. The larger
+      canvas font and physical sprite scale preserve legibility.
+    */
+
+    const galacticCentreLabel = makeGridTextSprite(
+        'Galactic center',
+        {
+            fontSize: 130,
+            fontFamily: 'Georgia, Times New Roman, serif',
+
+            colour: 'rgba(255, 222, 228, 1.0)',
+
+            scaleY: 250,
+        }
+    );
+
+    /*
+      Its exact x/y position is updated whenever the Solar circle moves.
+      The offset keeps the label outside the red glow marker.
+    */
+    galacticCentreLabel.renderOrder = 5;
+
+    root.add(galacticCentreLabel);
+
+
+    scene.add(root);
+
+    const layer = {
+        root,
+
+        zPlane,
+
+        numberOfCircleSegments,
+
+        circleGeometry,
+        circleMaterial,
+        circleLine,
+
+        tickGeometry,
+        tickMaterial,
+        tickLines,
+
+        galacticRadiusGeometry,
+        galacticRadiusMaterial,
+        galacticRadiusLine,
+        galacticRadiusLabel,
+
+        galacticCentreGeometry,
+        galacticCentrePositionAttribute,
+        galacticCentreMaterial,
+        galacticCentrePoints,
+        galacticCentreLabel,
+
+        lastTimeMyr: Number.NaN,
+    };
+
+    updateSolarCircle(
+        0.0,
+        layer
+    );
+
+    updateGalacticCentreProjectionScale(
+        layer
+    );
+
+    return layer;
+}
+
+
+function updateSolarCircle(
+    timeMyr,
+    layer = solarCircleLayer
+) {
+    if (!layer) {
+        return;
+    }
+
+    if (
+        Math.abs(
+            timeMyr - layer.lastTimeMyr
+        ) < 1.0e-8
+    ) {
+        return;
+    }
+
+    const centreAtTime = solarCircleCentreAtTime(
+        timeMyr
+    );
+
+    const centreX = centreAtTime.x;
+    const centreY = centreAtTime.y;
+
+    const radius = SOLAR_CIRCLE_RADIUS_PC;
+    const zPlane = layer.zPlane;
+
+    /*
+      ----------------------------------------------------------------
+      Local origin -> Galactic centre reference line
+      ----------------------------------------------------------------
+    */
+    const oldGalacticRadiusGeometry =
+        layer.galacticRadiusLine.geometry;
+
+    const newGalacticRadiusGeometry =
+        new LineGeometry();
+
+    newGalacticRadiusGeometry.setPositions(
+        new Float32Array([
+            0.0,
+            0.0,
+            zPlane,
+
+            centreX,
+            centreY,
+            zPlane,
+        ])
+    );
+
+    layer.galacticRadiusGeometry =
+        newGalacticRadiusGeometry;
+
+    layer.galacticRadiusLine.geometry =
+        newGalacticRadiusGeometry;
+
+    oldGalacticRadiusGeometry.dispose();
+
+    /*
+      ----------------------------------------------------------------
+      Solar circle
+      ----------------------------------------------------------------
+    */
+
+    const circlePositions = new Float32Array(
+        (layer.numberOfCircleSegments + 1) * 3
+    );
+
+    for (
+        let pointIndex = 0;
+        pointIndex <= layer.numberOfCircleSegments;
+        pointIndex++
+    ) {
+        const theta =
+            (
+                pointIndex
+                / layer.numberOfCircleSegments
+            )
+            * Math.PI
+            * 2.0;
+
+        const destinationIndex = pointIndex * 3;
+
+        circlePositions[destinationIndex + 0] =
+            centreX
+            + radius * Math.cos(theta);
+
+        circlePositions[destinationIndex + 1] =
+            centreY
+            + radius * Math.sin(theta);
+
+        circlePositions[destinationIndex + 2] =
+            zPlane;
+    }
+
+    const oldCircleGeometry =
+        layer.circleLine.geometry;
+
+    const newCircleGeometry = new LineGeometry();
+
+    newCircleGeometry.setPositions(
+        circlePositions
+    );
+
+    layer.circleGeometry = newCircleGeometry;
+    layer.circleLine.geometry = newCircleGeometry;
+
+    oldCircleGeometry.dispose();
+
+    layer.circleLine.computeLineDistances();
+
+
+    /*
+      ----------------------------------------------------------------
+      Solar-circle inward ticks
+      ----------------------------------------------------------------
+    */
+
+    const numberOfTicks = Math.round(
+        360.0 / SOLAR_CIRCLE_TICK_INTERVAL_DEG
+    );
+
+    const tickPositions = new Float32Array(
+        numberOfTicks * 2 * 3
+    );
+
+    for (
+        let tickIndex = 0;
+        tickIndex < numberOfTicks;
+        tickIndex++
+    ) {
+        const theta =
+            tickIndex
+            * THREE.MathUtils.degToRad(
+                SOLAR_CIRCLE_TICK_INTERVAL_DEG
+            );
+
+        const radialX = Math.cos(theta);
+        const radialY = Math.sin(theta);
+
+        const circleX =
+            centreX
+            + radius * radialX;
+
+        const circleY =
+            centreY
+            + radius * radialY;
+
+        const innerX =
+            circleX
+            - SOLAR_CIRCLE_TICK_LENGTH_PC
+            * radialX;
+
+        const innerY =
+            circleY
+            - SOLAR_CIRCLE_TICK_LENGTH_PC
+            * radialY;
+
+        const destinationIndex = tickIndex * 6;
+
+        tickPositions[destinationIndex + 0] =
+            circleX;
+
+        tickPositions[destinationIndex + 1] =
+            circleY;
+
+        tickPositions[destinationIndex + 2] =
+            zPlane;
+
+        tickPositions[destinationIndex + 3] =
+            innerX;
+
+        tickPositions[destinationIndex + 4] =
+            innerY;
+
+        tickPositions[destinationIndex + 5] =
+            zPlane;
+    }
+
+    const oldTickGeometry =
+        layer.tickLines.geometry;
+
+    const newTickGeometry =
+        new THREE.BufferGeometry();
+
+    newTickGeometry.setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute(
+            tickPositions,
+            3
+        )
+    );
+
+    layer.tickGeometry = newTickGeometry;
+    layer.tickLines.geometry = newTickGeometry;
+
+    oldTickGeometry.dispose();
+
+
+    /*
+      ----------------------------------------------------------------
+      Galactic-centre marker and label
+      ----------------------------------------------------------------
+
+      The Galactic centre is the centre of the Solar circle.
+    */
+
+    layer.galacticCentrePositionAttribute.array[0] =
+        centreX;
+
+    layer.galacticCentrePositionAttribute.array[1] =
+        centreY;
+
+    layer.galacticCentrePositionAttribute.array[2] =
+        zPlane;
+
+    layer.galacticCentrePositionAttribute.needsUpdate =
+        true;
+
+    updateGalacticCentreLabelPosition(
+        centreX,
+        centreY,
+        zPlane,
+        layer
+    );
+
+    layer.lastTimeMyr = timeMyr;
+}
+
+function updateGalacticCentreLabelPosition(
+    centreX,
+    centreY,
+    centreZ,
+    layer = solarCircleLayer
+) {
+    if (!layer || !camera) {
+        return;
+    }
+
+    /*
+      The camera's local Y axis is its screen-up direction in world space.
+
+      This gives the label a position visually above the Galactic-centre
+      point regardless of the current OrbitControls orientation.
+    */
+    const cameraUpWorld = new THREE.Vector3(
+        0.0,
+        1.0,
+        0.0
+    ).transformDirection(
+        camera.matrixWorld
+    );
+
+    /*
+      This is a physical offset in pc. Increase if the label overlaps
+      the crimson glow at close zoom.
+    */
+    const labelOffsetPc = 200.0;
+
+    layer.galacticCentreLabel.position.set(
+        centreX,
+        centreY,
+        centreZ
+    );
+
+    layer.galacticCentreLabel.position.addScaledVector(
+        cameraUpWorld,
+        labelOffsetPc
+    );
+}
+
+function updateGalacticRadiusLabelPosition(
+    centreX,
+    centreY,
+    zPlane,
+    layer = solarCircleLayer
+) {
+    if (!layer || !camera) {
+        return;
+    }
+
+    camera.updateMatrixWorld(true);
+
+    /*
+      The Solar-radius line runs from the local LSR origin to the
+      Galactic centre.
+    */
+    const lineDirection = new THREE.Vector3(
+        centreX,
+        centreY,
+        0.0
+    );
+
+    const lineLength = lineDirection.length();
+
+    if (lineLength < 1.0e-8) {
+        return;
+    }
+
+    lineDirection.divideScalar(lineLength);
+
+    /*
+      Attachment point: midpoint of the Solar-radius line.
+
+      This is approximately 4.06 kpc from the Galactic centre and from
+      the local LSR origin.
+    */
+    const attachmentPoint = new THREE.Vector3(
+        0.5 * centreX,
+        0.5 * centreY,
+        zPlane
+    );
+
+    /*
+      Camera direction, measured from the attachment point.
+    */
+    const directionToCamera = new THREE.Vector3()
+        .subVectors(
+            camera.position,
+            attachmentPoint
+        )
+        .normalize();
+
+    /*
+      The label must retain one in-plane direction parallel to the
+      Solar-radius line. Therefore, use the component of the camera
+      direction perpendicular to that line as the plane normal.
+
+      This creates the most camera-facing possible flag plane subject
+      to the "attached to the line" constraint.
+    */
+    const labelNormal = directionToCamera
+        .clone()
+        .addScaledVector(
+            lineDirection,
+            -directionToCamera.dot(
+                lineDirection
+            )
+        );
+
+    /*
+      Degenerate case: camera is looking almost exactly along the line.
+      Use the camera up direction as a stable fallback.
+    */
+    if (labelNormal.lengthSq() < 1.0e-10) {
+        labelNormal.set(
+            0.0,
+            1.0,
+            0.0
+        ).transformDirection(
+            camera.matrixWorld
+        );
+
+        labelNormal.addScaledVector(
+            lineDirection,
+            -labelNormal.dot(
+                lineDirection
+            )
+        );
+    }
+
+    labelNormal.normalize();
+
+    /*
+      Flat text plane basis:
+
+          local X = along the Solar-radius line
+          local Y = outward from the line to the label body
+          local Z = plane normal, oriented toward the camera
+
+      The plane's lower edge is therefore parallel to and conceptually
+      attached to the radius line.
+    */
+    let localX = lineDirection.clone();
+
+    /*
+      Keep text approximately upright from the viewer's perspective.
+
+      Flipping local X by 180 degrees still keeps it parallel to the
+      line, but avoids unnecessarily upside-down text.
+    */
+    const cameraRight = new THREE.Vector3(
+        1.0,
+        0.0,
+        0.0
+    ).transformDirection(
+        camera.matrixWorld
+    );
+
+    if (localX.dot(cameraRight) < 0.0) {
+        localX.negate();
+    }
+
+    const localY = new THREE.Vector3()
+        .crossVectors(
+            labelNormal,
+            localX
+        )
+        .normalize();
+
+    /*
+      Ensure the plane normal stays camera-facing after the local-X
+      possible flip.
+    */
+    const correctedNormal = new THREE.Vector3()
+        .crossVectors(
+            localX,
+            localY
+        )
+        .normalize();
+
+    /*
+      Build the orientation matrix.
+
+      PlaneGeometry lies in local XY and has local +Z as its normal.
+      Therefore its world basis is:
+
+          local X -> localX
+          local Y -> localY
+          local Z -> correctedNormal
+    */
+    const orientationMatrix = new THREE.Matrix4().makeBasis(
+        localX,
+        localY,
+        correctedNormal
+    );
+
+    layer.galacticRadiusLabel.mesh.quaternion
+        .setFromRotationMatrix(
+            orientationMatrix
+        );
+
+    /*
+      Place the label's centre beyond the line.
+
+      Its lower edge is separated from the line by:
+          GALACTIC_RADIUS_LABEL_LINE_SEPARATION_PC
+
+      Since PlaneGeometry is centred around its local origin, move its
+      centre by half its physical height plus the requested separation.
+    */
+    const labelCentreOffset =
+        GALACTIC_RADIUS_LABEL_LINE_SEPARATION_PC
+        + 0.5
+        * GALACTIC_RADIUS_LABEL_HEIGHT_PC;
+
+    layer.galacticRadiusLabel.mesh.position
+        .copy(attachmentPoint)
+        .addScaledVector(
+            localY,
+            labelCentreOffset
+        );
+}
+
+function updateGalacticCentreProjectionScale(
+    layer = solarCircleLayer
+) {
+    if (!layer || !camera) {
+        return;
+    }
+
+    const drawingBufferSize =
+        renderer.getDrawingBufferSize(
+            new THREE.Vector2()
+        );
+
+    const verticalFovRadians =
+        THREE.MathUtils.degToRad(
+            camera.fov
+        );
+
+    const projectionScale =
+        drawingBufferSize.y
+        / (
+            2.0
+            * Math.tan(
+                verticalFovRadians * 0.5
+            )
+        );
+
+    layer.galacticCentreMaterial
+        .uniforms
+        .uProjectionScale
+        .value = projectionScale;
+}
+
+function updateSolarCircleStyle() {
+    if (!solarCircleLayer || !clusterLayer) {
+        return;
+    }
+
+    /*
+      The Show Galactic references checkbox controls every child:
+      Solar circle, ticks, Galactic centre, labels, and radius line.
+    */
+    solarCircleLayer.root.visible = Boolean(
+        params.showSolarCircle
+    );
+
+    solarCircleLayer.circleMaterial.opacity =
+        SOLAR_CIRCLE_OPACITY;
+
+    solarCircleLayer.tickMaterial.opacity =
+        SOLAR_CIRCLE_OPACITY;
+
+    const selectedTimeMyr =
+        clusterLayer.timesMyr[
+            clusterLayer.frameIndex
+        ];
+
+    const centreAtTime = solarCircleCentreAtTime(
+        selectedTimeMyr
+    );
+
+    /*
+      Keep the Galactic-center label screen-above its crimson marker.
+    */
+    updateGalacticCentreLabelPosition(
+        centreAtTime.x,
+        centreAtTime.y,
+        solarCircleLayer.zPlane
+    );
+
+    /*
+      Keep R = 8.12 kpc offset from and parallel to the radial line.
+    */
+    updateGalacticRadiusLabelPosition(
+        centreAtTime.x,
+        centreAtTime.y,
+        solarCircleLayer.zPlane
+    );
+
+    /*
+      Radius line and its label:
+
+      distance < 2 kpc -> invisible
+      distance > 3 kpc -> fully visible
+      between          -> smooth transition
+    */
+    const cameraDistancePc =
+        cameraDistanceToLsrPlaneCentre();
+
+    const radiusReferenceOpacity =
+        smoothVisibilityFactor(
+            cameraDistancePc,
+            GALACTIC_RADIUS_REFERENCE_FADE_START_PC,
+            GALACTIC_RADIUS_REFERENCE_FADE_END_PC
+        );
+
+    solarCircleLayer.galacticRadiusMaterial.opacity =
+        GALACTIC_RADIUS_LINE_NOMINAL_OPACITY
+        * radiusReferenceOpacity;
+
+    solarCircleLayer.galacticRadiusLabel.material.opacity =
+        GALACTIC_RADIUS_LABEL_NOMINAL_OPACITY
+        * radiusReferenceOpacity;
+
+    solarCircleLayer.galacticRadiusLabel.mesh.visible =
+        radiusReferenceOpacity > 0.001;
+
+}
+
 function makeOutline(color, opacity) {
     const geometry = new THREE.EdgesGeometry(
         new THREE.BoxGeometry(1, 1, 1)
@@ -5123,7 +6685,7 @@ function makeOutline(color, opacity) {
         color,
         transparent: true,
         opacity,
-        depthTest: false,
+        depthTest: true,
         depthWrite: false,
     });
 
@@ -5202,6 +6764,197 @@ function updateCameraViewOffset() {
     camera.updateProjectionMatrix();
 }
 
+function returnToPresentTimeSmoothly() {
+    if (!clusterLayer) {
+        return;
+    }
+
+    /*
+      Cancel only an existing time-return animation.
+
+      This does not affect a simultaneous camera-reset animation.
+    */
+    if (timeReturnAnimationFrame !== null) {
+        cancelAnimationFrame(
+            timeReturnAnimationFrame
+        );
+
+        timeReturnAnimationFrame = null;
+    }
+
+    const startTimeMyr = finiteNumber(
+        params.clusterTime,
+        clusterLayer.timesMyr[
+            clusterLayer.zeroTimeIndex
+        ]
+    );
+
+    const presentTimeMyr = clusterLayer.timesMyr[
+        clusterLayer.zeroTimeIndex
+    ];
+
+    /*
+      Already at the present epoch.
+    */
+    if (
+        Math.abs(
+            startTimeMyr - presentTimeMyr
+        ) < 1.0e-8
+    ) {
+        return;
+    }
+
+    const durationMs = 2000.0;
+    const animationStart = performance.now();
+
+    function smoothStep(value) {
+        return value * value * (
+            3.0 - 2.0 * value
+        );
+    }
+
+    function animateTimeReturn(now) {
+        const rawProgress = THREE.MathUtils.clamp(
+            (now - animationStart) / durationMs,
+            0.0,
+            1.0
+        );
+
+        const easedProgress = smoothStep(
+            rawProgress
+        );
+
+        /*
+          The trajectory dataset contains discrete 1-Myr snapshots, so
+          the viewer advances through those precomputed epochs gradually
+          over the 2-second interval.
+        */
+        params.clusterTime = THREE.MathUtils.lerp(
+            startTimeMyr,
+            presentTimeMyr,
+            easedProgress
+        );
+
+        updateExternalTimeSlider();
+
+        requestRender();
+
+        if (rawProgress < 1.0) {
+            timeReturnAnimationFrame =
+                requestAnimationFrame(
+                    animateTimeReturn
+                );
+        } else {
+            /*
+              End exactly at t = 0 Myr.
+            */
+            params.clusterTime = presentTimeMyr;
+
+            setClusterFrameFromTime(
+                presentTimeMyr
+            );
+
+            updateExternalTimeSlider();
+
+            timeReturnAnimationFrame = null;
+
+            requestRender();
+        }
+    }
+
+    timeReturnAnimationFrame =
+        requestAnimationFrame(
+            animateTimeReturn
+        );
+}
+
+function isTextEditingElement(element) {
+    if (!element) {
+        return false;
+    }
+
+    if (element.isContentEditable) {
+        return true;
+    }
+
+    if (
+        element instanceof HTMLTextAreaElement
+        || element instanceof HTMLSelectElement
+    ) {
+        return true;
+    }
+
+    if (element instanceof HTMLInputElement) {
+        /*
+          Allow R and T while a range slider, checkbox, or button has
+          focus. Still avoid hijacking keys while the user edits a
+          lil-gui numerical/text input.
+        */
+        const nonTextInputTypes = new Set([
+            'range',
+            'checkbox',
+            'radio',
+            'button',
+            'submit',
+            'reset',
+            'color',
+            'file',
+        ]);
+
+        return !nonTextInputTypes.has(
+            element.type
+        );
+    }
+
+    return false;
+}
+
+
+function onKeyDown(event) {
+    /*
+      Do not repeatedly restart a two-second animation while the key is
+      held down.
+    */
+    if (event.repeat) {
+        return;
+    }
+
+    /*
+      Preserve browser shortcuts such as Ctrl+R, Cmd+R, etc.
+    */
+    if (
+        event.ctrlKey
+        || event.metaKey
+        || event.altKey
+    ) {
+        return;
+    }
+
+    if (
+        isTextEditingElement(
+            document.activeElement
+        )
+    ) {
+        return;
+    }
+
+    if (event.code === 'KeyR') {
+        event.preventDefault();
+        event.stopPropagation();
+
+        params?.resetView?.();
+
+        return;
+    }
+
+    if (event.code === 'KeyT') {
+        event.preventDefault();
+        event.stopPropagation();
+
+        returnToPresentTimeSmoothly();
+    }
+}
+
 function onResize() {
     renderer.setSize(
         window.innerWidth,
@@ -5219,6 +6972,20 @@ function onResize() {
             window.innerWidth,
             window.innerHeight
         );
+    }
+
+    if (solarCircleLayer) {
+        solarCircleLayer.circleMaterial.resolution.set(
+            window.innerWidth,
+            window.innerHeight
+        );
+
+        solarCircleLayer.galacticRadiusMaterial.resolution.set(
+            window.innerWidth,
+            window.innerHeight
+        );
+
+        updateGalacticCentreProjectionScale();
     }
 
     if (sunLayer) {
