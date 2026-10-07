@@ -11,6 +11,15 @@ import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19.2/dist/lil-gui.esm.mi
 const MAX_STEPS = 512;
 
 /*
+  External timeline limits.
+
+  The underlying trajectory files may contain a broader interval, but the
+  interactive viewer exposes only this selected time range.
+*/
+const TIME_SLIDER_MIN_MYR = -50.0;
+const TIME_SLIDER_MAX_MYR = 50.0;
+
+/*
   A cluster begins fading once we go farther into the past than its age.
 
   Example:
@@ -946,9 +955,9 @@ async function initialise() {
     */
     showRadcliffeWave: false,
 
-    radcliffeWaveLineWidth: 5.5,
+    radcliffeWaveLineWidth: 5.0,
 
-    radcliffeWaveOpacity: 0.50,
+    radcliffeWaveOpacity: 0.30,
 
 
     /*
@@ -1931,7 +1940,7 @@ function syncUniforms() {
         THREE.MathUtils.clamp(
             finiteNumber(
                 params.radcliffeWaveLineWidth,
-                5.5
+                5.0
             ),
             0.5,
             30.0
@@ -1941,7 +1950,7 @@ function syncUniforms() {
         THREE.MathUtils.clamp(
             finiteNumber(
                 params.radcliffeWaveOpacity,
-                0.50
+                0.30
             ),
             0.0,
             1.0
@@ -2277,15 +2286,33 @@ function updateExternalTimeSlider() {
         return;
     }
 
-    const firstTime = clusterLayer.timesMyr[0];
+    const datasetFirstTime = clusterLayer.timesMyr[0];
 
-    const lastTime = clusterLayer.timesMyr[
+    const datasetLastTime = clusterLayer.timesMyr[
         clusterLayer.timesMyr.length - 1
     ];
 
-    const currentTime = clusterLayer.timesMyr[
-        nearestClusterFrameIndex(params.clusterTime)
-    ];
+    const firstTime = THREE.MathUtils.clamp(
+        TIME_SLIDER_MIN_MYR,
+        datasetFirstTime,
+        datasetLastTime
+    );
+
+    const lastTime = THREE.MathUtils.clamp(
+        TIME_SLIDER_MAX_MYR,
+        datasetFirstTime,
+        datasetLastTime
+    );
+
+    const currentTime = THREE.MathUtils.clamp(
+        clusterLayer.timesMyr[
+            nearestClusterFrameIndex(
+                params.clusterTime
+            )
+        ],
+        firstTime,
+        lastTime
+    );
 
     const denominator = lastTime - firstTime;
 
@@ -2319,11 +2346,23 @@ function createTimeTicks() {
         return;
     }
 
-    const firstTime = clusterLayer.timesMyr[0];
+    const datasetFirstTime = clusterLayer.timesMyr[0];
 
-    const lastTime = clusterLayer.timesMyr[
+    const datasetLastTime = clusterLayer.timesMyr[
         clusterLayer.timesMyr.length - 1
     ];
+
+    const firstTime = THREE.MathUtils.clamp(
+        TIME_SLIDER_MIN_MYR,
+        datasetFirstTime,
+        datasetLastTime
+    );
+
+    const lastTime = THREE.MathUtils.clamp(
+        TIME_SLIDER_MAX_MYR,
+        datasetFirstTime,
+        datasetLastTime
+    );
 
     const range = lastTime - firstTime;
 
@@ -2339,10 +2378,14 @@ function createTimeTicks() {
     /*
       Add ticks every 10 Myr.
 
-      For a -61 ... +61 Myr slider this creates marks at:
-      -60, -50, ..., -10, 0, +10, ..., +60 Myr.
+      For the -50 ... +50 Myr visible timeline this creates marks at:
+      -50, -40, ..., -10, 0, +10, ..., +50 Myr.
     */
-    for (let time = -60; time <= 60; time += 10) {
+    for (
+        let time = TIME_SLIDER_MIN_MYR;
+        time <= TIME_SLIDER_MAX_MYR;
+        time += 10
+    ) {
         if (time < firstTime || time > lastTime) {
             continue;
         }
@@ -2381,11 +2424,27 @@ function initialiseExternalTimeSlider() {
         return;
     }
 
-    const firstTime = clusterLayer.timesMyr[0];
+    /*
+      Restrict the user-facing timeline to -50 ... +50 Myr, while ensuring
+      the requested limits remain valid for the loaded trajectory data.
+    */
+    const datasetFirstTime = clusterLayer.timesMyr[0];
 
-    const lastTime = clusterLayer.timesMyr[
+    const datasetLastTime = clusterLayer.timesMyr[
         clusterLayer.timesMyr.length - 1
     ];
+
+    const firstTime = THREE.MathUtils.clamp(
+        TIME_SLIDER_MIN_MYR,
+        datasetFirstTime,
+        datasetLastTime
+    );
+
+    const lastTime = THREE.MathUtils.clamp(
+        TIME_SLIDER_MAX_MYR,
+        datasetFirstTime,
+        datasetLastTime
+    );
 
     timeSlider.min = String(firstTime);
     timeSlider.max = String(lastTime);
