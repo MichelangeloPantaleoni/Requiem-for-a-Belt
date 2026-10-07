@@ -659,8 +659,6 @@ let controls;
 let volumeMesh;
 let uniforms;
 
-let outerOutline;
-
 /*
   Galactic-plane coordinate grid at z = 0.
 */
@@ -678,6 +676,14 @@ let solarCircleLayer = null;
 */
 let gouldBeltLine;
 let gouldBeltMaterial;
+
+
+/*
+  The 3-D Radcliffe wave model and its material.
+*/
+let radcliffeWaveLine;
+let radcliffeWaveMaterial;
+
 
 /*
   Contains the trajectory data, point geometry, material, attributes,
@@ -741,6 +747,7 @@ async function initialise() {
         clusterMetadata,
         clusterRawBuffer,
         sunMetadata,
+        radcliffeWaveCsv,
     ] = await Promise.all([
         loadJSON('./data/density.json'),
         loadArrayBuffer('./data/density.u8'),
@@ -750,6 +757,7 @@ async function initialise() {
         loadArrayBuffer('./data/cluster_trajectories.f32'),
 
         loadJSON('./data/sun_trajectory.json'),
+        loadText('./data/Radcliffe_Wave_Best_Fit.csv'),
     ]);
 
 
@@ -764,6 +772,10 @@ async function initialise() {
     const sunData = parseSunDataset(
         sunMetadata,
         clusterData.timesMyr
+    );
+
+    const radcliffeWavePositions = parseRadcliffeWaveCsv(
+        radcliffeWaveCsv
     );
 
     if (
@@ -882,8 +894,6 @@ async function initialise() {
 
     steps: Math.round(finiteNumber(defaults.steps, 100)),
 
-    showBounds: false,
-
     /*
       ----------------------------------------------------------------
       Galactic-plane coordinate grid controls
@@ -928,6 +938,19 @@ async function initialise() {
     */
     gouldBeltOpacity: 0.50,
 
+
+    /*
+      ----------------------------------------------------------------
+      Radcliffe wave model controls
+      ----------------------------------------------------------------
+    */
+    showRadcliffeWave: false,
+
+    radcliffeWaveLineWidth: 5.5,
+
+    radcliffeWaveOpacity: 0.50,
+
+
     /*
       ----------------------------------------------------------------
       Stellar cluster trajectory controls
@@ -956,15 +979,13 @@ async function initialise() {
         clusterData.defaultControls.colorByGroup ?? true
     ),
 
-    clusterMinSize: finiteNumber(
-        clusterData.defaultControls.minMarkerSize,
-        9.0
-    ),
+    /*
+      One common scale factor for all cluster markers.
 
-    clusterMaxSize: finiteNumber(
-        clusterData.defaultControls.maxMarkerSize,
-        22.0
-    ),
+      A value of 1.0 exactly preserves the current default min/max marker
+      diameters and therefore preserves all relative size proportions.
+    */
+    clusterMarkerScale: 1.0,
 
     /*
       ----------------------------------------------------------------
@@ -1218,22 +1239,6 @@ async function initialise() {
 
     scene.add(volumeMesh);
 
-
-    /*
-      The domain box is added directly to the scene, not as a child of the
-      density volume. Therefore it remains available at all times, even when
-      the OB-star field itself has faded out.
-    */
-    outerOutline = makeOutline(0x6481a0, 0.38);
-
-    outerOutline.position.copy(centre);
-    outerOutline.scale.copy(extent);
-
-    outerOutline.renderOrder =
-        REFERENCE_RENDER_ORDER;
-
-    scene.add(outerOutline);
-
     /*
       Galactic-plane coordinate grid.
 
@@ -1274,6 +1279,20 @@ async function initialise() {
 
     scene.add(gouldBeltLine);
 
+    /*
+      Create the static Radcliffe-wave best-fit model.
+
+      Its visibility is controlled independently in the GUI, but its
+      temporal fade matches the Gould Belt model.
+    */
+    radcliffeWaveLine = createRadcliffeWaveModel(
+        radcliffeWavePositions
+    );
+
+    radcliffeWaveLine.renderOrder =
+        REFERENCE_RENDER_ORDER;
+
+    scene.add(radcliffeWaveLine);
 
     /*
       Create the dynamic point layer containing all clusters.
@@ -1461,32 +1480,16 @@ function createGUI() {
             .name('Trail opacity')
     );
 
-    const markerFolder = clusterFolder.addFolder(
-        'Marker appearance'
-    );
-
     watched(
-        markerFolder
+        clusterFolder
             .add(
                 params,
-                'clusterMinSize',
-                1.0,
-                80.0,
-                0.5
+                'clusterMarkerScale',
+                0.25,
+                5.0,
+                0.05
             )
-            .name('Min marker size [px]')
-    );
-
-    watched(
-        markerFolder
-            .add(
-                params,
-                'clusterMaxSize',
-                1.0,
-                120.0,
-                0.5
-            )
-            .name('Max marker size [px]')
+            .name('Marker size')
     );
 
     /* ====================================================================== */
@@ -1529,17 +1532,50 @@ function createGUI() {
 
 
     /* ====================================================================== */
-    /* 4. COORDINATES AND OTHEWR REFERENCES                                               */
+    /* 4. RADCLIFFE WAVE MODEL                                                 */
+    /* ====================================================================== */
+
+    const radcliffeFolder = gui.addFolder(
+        'Radcliffe wave model [Konietzka et al. 2024]'
+    );
+
+    watched(
+        radcliffeFolder
+            .add(params, 'showRadcliffeWave')
+            .name('Show Radcliffe wave model')
+    );
+
+    watched(
+        radcliffeFolder
+            .add(
+                params,
+                'radcliffeWaveLineWidth',
+                1.0,
+                15.0,
+                0.25
+            )
+            .name('Line width [px]')
+    );
+
+    watched(
+        radcliffeFolder
+            .add(
+                params,
+                'radcliffeWaveOpacity',
+                0.0,
+                1.0,
+                0.01
+            )
+            .name('Opacity')
+    );
+
+
+    /* ====================================================================== */
+    /* 5. COORDINATES AND OTHEWR REFERENCES                                               */
     /* ====================================================================== */
 
     const gridFolder = gui.addFolder(
         'Coordinates and other references'
-    );
-
-    watched(
-        gridFolder
-            .add(params, 'showBounds')
-            .name('Show domain box')
     );
 
     watched(
@@ -1607,6 +1643,7 @@ function createGUI() {
     densityFolder.close();
     clusterFolder.close();
     gouldFolder.close();
+    radcliffeFolder.close();
     gridFolder.close();
 }
 
@@ -1730,7 +1767,13 @@ function syncUniforms() {
     const gouldBeltIsVisible =
         Boolean(params.showGouldBelt)
         && gouldBeltFade > 0.001;
-
+    /*
+      The Radcliffe wave follows the same temporal visibility law as the
+      Gould Belt: fully visible at t = 0 and faded out by |t| = 3 Myr.
+    */
+    const radcliffeWaveIsVisible =
+        Boolean(params.showRadcliffeWave)
+        && gouldBeltFade > 0.001;
 
     const lower = THREE.MathUtils.clamp(
         finiteNumber(params.lower, 0.5),
@@ -1743,15 +1786,6 @@ function syncUniforms() {
         lower + 0.005,
         1.0
     );
-
-   /*
-     Update Gould Belt line appearance.
-   */
-   gouldBeltMaterial.linewidth = THREE.MathUtils.clamp(
-       finiteNumber(params.gouldBeltLineWidth, 5.5),
-       0.5,
-       30.0
-   );
 
     uniforms.uLower.value = lower;
     uniforms.uUpper.value = upper;
@@ -1854,39 +1888,68 @@ function syncUniforms() {
     volumeMesh.visible = densityIsVisible;
 
     /*
-      Gould Belt model is available only at t = 0 Myr.
+      Gould Belt model.
     */
-    gouldBeltLine.visible = gouldBeltIsVisible;
+    gouldBeltLine.visible =
+        gouldBeltIsVisible;
 
-    /*
-      Keep Gould Belt visual controls working.
-    */
-    gouldBeltMaterial.linewidth = THREE.MathUtils.clamp(
-        finiteNumber(params.gouldBeltLineWidth, 5.5),
-        0.5,
-        30.0
-    );
+    gouldBeltMaterial.linewidth =
+        THREE.MathUtils.clamp(
+            finiteNumber(
+                params.gouldBeltLineWidth,
+                5.5
+            ),
+            0.5,
+            30.0
+        );
 
-    const nominalGouldBeltOpacity = THREE.MathUtils.clamp(
-        finiteNumber(params.gouldBeltOpacity, 0.50),
-        0.0,
-        1.0
-    );
+    const nominalGouldBeltOpacity =
+        THREE.MathUtils.clamp(
+            finiteNumber(
+                params.gouldBeltOpacity,
+                0.50
+            ),
+            0.0,
+            1.0
+        );
 
-    /*
-      Fade the present-day Gould Belt model away together with the KDE field.
-    */
     gouldBeltMaterial.opacity =
         nominalGouldBeltOpacity
         * gouldBeltFade;
 
+
     /*
-      The domain box is independent from the OB-density visibility and
-      remains visible at every time if enabled.
+      Radcliffe-wave model.
+
+      It has independent GUI controls, but shares the same temporal fading
+      factor as Gould's Belt.
     */
-    outerOutline.visible = Boolean(
-        params.showBounds
-    );
+    radcliffeWaveLine.visible =
+        radcliffeWaveIsVisible;
+
+    radcliffeWaveMaterial.linewidth =
+        THREE.MathUtils.clamp(
+            finiteNumber(
+                params.radcliffeWaveLineWidth,
+                5.5
+            ),
+            0.5,
+            30.0
+        );
+
+    const nominalRadcliffeWaveOpacity =
+        THREE.MathUtils.clamp(
+            finiteNumber(
+                params.radcliffeWaveOpacity,
+                0.50
+            ),
+            0.0,
+            1.0
+        );
+
+    radcliffeWaveMaterial.opacity =
+        nominalRadcliffeWaveOpacity
+        * gouldBeltFade;
 
     /*
       Galactic plane grid is independent from time and all scientific layers.
@@ -2101,6 +2164,67 @@ function createGouldBeltModel() {
     );
 
     line.name = 'Gould Belt model (Perrot & Grenier 2003)';
+
+    return line;
+}
+
+
+function createRadcliffeWaveModel(
+    positions
+) {
+    /*
+      `positions` contains ordered x/y/z coordinates from the CSV:
+
+          x0, y0, z0,
+          x1, y1, z1,
+          ...
+
+      Line2 joins them in their CSV order, producing the oscillating
+      Radcliffe-wave curve.
+    */
+    const geometry = new LineGeometry();
+
+    geometry.setPositions(
+        positions
+    );
+
+    /*
+      Crimson, matching the gamma Vel family colour and the request for
+      a visually distinct Radcliffe-wave curve.
+    */
+    radcliffeWaveMaterial = new LineMaterial({
+        color: 0xdc143c,
+
+        linewidth: params.radcliffeWaveLineWidth,
+
+        transparent: true,
+        opacity: params.radcliffeWaveOpacity,
+
+        depthTest: true,
+        depthWrite: false,
+
+        worldUnits: false,
+
+        toneMapped: false,
+    });
+
+    radcliffeWaveMaterial.resolution.set(
+        window.innerWidth,
+        window.innerHeight
+    );
+
+    const line = new Line2(
+        geometry,
+        radcliffeWaveMaterial
+    );
+
+    line.name = 'Radcliffe wave model';
+
+    /*
+      The wave may extend outside the local density volume, so avoid
+      accidental disappearance from stale automatic bounds.
+    */
+    line.frustumCulled = false;
 
     return line;
 }
@@ -2484,6 +2608,116 @@ function parseClusterDataset(metadata, rawBuffer) {
 
         defaultControls: metadata.defaultControls ?? {},
     };
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* RADCLIFFE WAVE DATA                                                        */
+/* -------------------------------------------------------------------------- */
+
+function parseRadcliffeWaveCsv(csvText) {
+    if (typeof csvText !== 'string') {
+        throw new Error(
+            'Radcliffe-wave CSV could not be read as text.'
+        );
+    }
+
+    /*
+      Remove a possible UTF-8 byte-order mark, split into rows, and
+      discard empty lines.
+    */
+    const rows = csvText
+        .replace(/^\uFEFF/, '')
+        .split(/\r?\n/)
+        .map((row) => row.trim())
+        .filter((row) => row.length > 0);
+
+    if (rows.length < 3) {
+        throw new Error(
+            'Radcliffe-wave CSV must contain a header and at least two data rows.'
+        );
+    }
+
+    const cleanCell = (value) => {
+        return String(value)
+            .trim()
+            .replace(/^"|"$/g, '');
+    };
+
+    /*
+      Read header names case-insensitively.
+
+      Expected CSV columns:
+          x,y,z
+    */
+    const headers = rows[0]
+        .split(',')
+        .map((value) => {
+            return cleanCell(value).toLowerCase();
+        });
+
+    const xIndex = headers.indexOf('x');
+    const yIndex = headers.indexOf('y');
+    const zIndex = headers.indexOf('z');
+
+    if (
+        xIndex < 0
+        || yIndex < 0
+        || zIndex < 0
+    ) {
+        throw new Error(
+            'Radcliffe-wave CSV must contain x, y, and z columns.'
+        );
+    }
+
+    const positionValues = [];
+
+    for (
+        let rowIndex = 1;
+        rowIndex < rows.length;
+        rowIndex++
+    ) {
+        const columns = rows[rowIndex].split(',');
+
+        const x = Number(
+            cleanCell(columns[xIndex] ?? '')
+        );
+
+        const y = Number(
+            cleanCell(columns[yIndex] ?? '')
+        );
+
+        const z = Number(
+            cleanCell(columns[zIndex] ?? '')
+        );
+
+        if (
+            !Number.isFinite(x)
+            || !Number.isFinite(y)
+            || !Number.isFinite(z)
+        ) {
+            throw new Error(
+                'Radcliffe-wave CSV contains an invalid coordinate '
+                + `at row ${rowIndex + 1}.`
+            );
+        }
+
+        positionValues.push(
+            x,
+            y,
+            z
+        );
+    }
+
+    if (positionValues.length < 6) {
+        throw new Error(
+            'Radcliffe-wave CSV does not contain enough valid points.'
+        );
+    }
+
+    return new Float32Array(
+        positionValues
+    );
 }
 
 
@@ -3234,6 +3468,33 @@ function createClusterLayer(dataset) {
         (cluster) => cluster.nStars
     );
 
+    /*
+      Preserve the current default marker-size prescription. The new GUI
+      control only multiplies both values by one common scale factor.
+    */
+    const baseMinMarkerDiameterPx =
+        THREE.MathUtils.clamp(
+            finiteNumber(
+                dataset.defaultControls.minMarkerSize,
+                9.0
+            ),
+            1.0,
+            80.0
+        );
+
+    const baseMaxMarkerDiameterPx =
+        Math.max(
+            baseMinMarkerDiameterPx,
+            THREE.MathUtils.clamp(
+                finiteNumber(
+                    dataset.defaultControls.maxMarkerSize,
+                    22.0
+                ),
+                1.0,
+                120.0
+            )
+        );
+
     const dummy = new THREE.Object3D();
 
     return {
@@ -3249,6 +3510,9 @@ function createClusterLayer(dataset) {
         trails,
 
         dummy,
+
+        baseMinMarkerDiameterPx,
+        baseMaxMarkerDiameterPx,
 
         radiiPc: new Float32Array(numberOfClusters),
 
@@ -3912,17 +4176,27 @@ function updateClusterStyle(force = false) {
         return;
     }
 
-    const minDiameterPx = THREE.MathUtils.clamp(
-        finiteNumber(params.clusterMinSize, 8.0),
-        1.0,
-        120.0
-    );
+    const markerScale =
+        THREE.MathUtils.clamp(
+            finiteNumber(
+                params.clusterMarkerScale,
+                1.0
+            ),
+            0.25,
+            5.0
+        );
 
-    const maxDiameterPx = THREE.MathUtils.clamp(
-        finiteNumber(params.clusterMaxSize, 60.0),
-        1.0,
-        200.0
-    );
+    /*
+      Scale both the minimum and maximum default marker diameters by the
+      same factor, preserving the existing relative size prescription.
+    */
+    const minDiameterPx =
+        clusterLayer.baseMinMarkerDiameterPx
+        * markerScale;
+
+    const maxDiameterPx =
+        clusterLayer.baseMaxMarkerDiameterPx
+        * markerScale;
 
     const colorByGroup = Boolean(
         params.colorClustersByGroup
@@ -3934,8 +4208,7 @@ function updateClusterStyle(force = false) {
     );
 
     const styleSignature = [
-        minDiameterPx,
-        maxDiameterPx,
+        markerScale,
         colorByGroup,
         viewportHeight,
     ].join('|');
@@ -6676,22 +6949,6 @@ function updateSolarCircleStyle() {
 
 }
 
-function makeOutline(color, opacity) {
-    const geometry = new THREE.EdgesGeometry(
-        new THREE.BoxGeometry(1, 1, 1)
-    );
-
-    const material = new THREE.LineBasicMaterial({
-        color,
-        transparent: true,
-        opacity,
-        depthTest: true,
-        depthWrite: false,
-    });
-
-    return new THREE.LineSegments(geometry, material);
-}
-
 
 function readRange(value, name) {
     if (!Array.isArray(value) || value.length !== 2) {
@@ -6725,6 +6982,17 @@ async function loadJSON(url) {
     return response.json();
 }
 
+async function loadText(url) {
+    const response = await fetch(url);
+
+    if (!response.ok) {
+        throw new Error(
+            `Could not load ${url}: HTTP ${response.status}`
+        );
+    }
+
+    return response.text();
+}
 
 async function loadArrayBuffer(url) {
     const response = await fetch(url);
@@ -6969,6 +7237,13 @@ function onResize() {
 
     if (gouldBeltMaterial) {
         gouldBeltMaterial.resolution.set(
+            window.innerWidth,
+            window.innerHeight
+        );
+    }
+
+    if (radcliffeWaveMaterial) {
+        radcliffeWaveMaterial.resolution.set(
             window.innerWidth,
             window.innerHeight
         );
